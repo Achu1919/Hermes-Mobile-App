@@ -1,0 +1,175 @@
+import { useEffect, useMemo, useState } from 'react'
+import { Bot, Plus, Search, Settings as SettingsIcon, Users, X } from 'lucide-react'
+
+import { ChatView } from './components/ChatView'
+import { buildBotRows } from './live-model'
+import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession } from './hermes'
+
+type Tab = 'bots' | 'sessions'
+type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; emoji: string }
+
+const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
+const initials = (name: string) => name.split(/[-_ ]+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase()
+const ago = (seconds?: number) => {
+  if (!seconds) return ''
+  const delta = Math.max(0, Date.now() / 1000 - seconds)
+  if (delta < 75) return 'now'
+  if (delta < 3600) return `${Math.floor(delta / 60)}m`
+  if (delta < 86400) return `${Math.floor(delta / 3600)}h`
+  if (delta < 604800) return `${Math.floor(delta / 86400)}d`
+  return `${Math.floor(delta / 604800)}w`
+}
+
+const roles: Record<string, [string, string]> = {
+  Researcher: ['research-rabbit', 'Digs into questions and returns sourced answers.'],
+  Coder: ['patch', 'Writes, reviews, and ships code.'],
+  Writer: ['draft', 'Turns ideas into clear, vivid writing.'],
+  Analyst: ['signal', 'Finds patterns and explains what matters.'],
+  Custom: ['', ''],
+}
+const emojis = ['💻', '🤖', '🧠', '🐈', '🚀', '🔭', '⚡', '🎯', '📚', '🎨', '🔬', '🦉']
+
+export default function App() {
+  const [tab, setTab] = useState<Tab>('bots')
+  const [profiles, setProfiles] = useState<LiveProfile[]>([])
+  const [sessions, setSessions] = useState<LiveSession[]>([])
+  const [selected, setSelected] = useState<LiveSession | null>(null)
+  const [messages, setMessages] = useState<LiveMessage[]>([])
+  const [draft, setDraft] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [streaming, setStreaming] = useState('')
+  const [sending, setSending] = useState(false)
+  const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [settings, setSettings] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [createStep, setCreateStep] = useState(0)
+  const [creating, setCreating] = useState(false)
+  const [botDraft, setBotDraft] = useState<DraftBot>({
+    role: 'Coder', name: 'patch', description: 'Writes, reviews, and ships code.',
+    soul: 'You are a pragmatic software engineer. Read surrounding code before changing it, keep diffs focused, and verify your work by running it.',
+    model: '', provider: '', emoji: '💻',
+  })
+
+  const refresh = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      const data = await loadSnapshot()
+      setProfiles(data.profiles)
+      setSessions(data.sessions)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not connect to Hermes Desktop.')
+    } finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    void refresh()
+    const timer = window.setInterval(() => void refresh(), 5_000)
+    return () => window.clearInterval(timer)
+  }, [])
+
+  const rows = useMemo(() => buildBotRows(profiles).map(({ profile, session }) => ({
+    profile,
+    session: session ? {
+      id: session.resolved_id || session.id,
+      title: profile.display_name || titleize(profile.name),
+      preview: session.preview || '',
+      profile: profile.name,
+      model: profile.model,
+      last_active: session.last_active,
+      unread: false,
+    } satisfies LiveSession : null,
+  })).filter(row => `${row.profile.name} ${row.profile.display_name || ''} ${row.session?.preview || ''}`.toLowerCase().includes(query.toLowerCase())), [profiles, query])
+
+  const visibleSessions = useMemo(() => sessions.filter(session => `${session.title} ${session.profile} ${session.preview}`.toLowerCase().includes(query.toLowerCase())), [sessions, query])
+  const mentions = useMemo(() => profiles.filter(profile => (`@${profile.name}`).includes((draft.match(/@[\w-]*$/)?.[0] || '').toLowerCase())), [profiles, draft])
+
+  const openSession = async (session: LiveSession) => {
+    setSelected(session)
+    setMessages([])
+    setError('')
+    try { setMessages(await loadMessages(session.id, session.profile)) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.') }
+  }
+
+  const submit = async () => {
+    if (!selected || !draft.trim() || sending) return
+    const text = draft.trim()
+    setDraft('')
+    setError('')
+    setSending(true)
+    setStreaming('')
+    setMessages(items => [...items, { id: -Date.now(), role: 'user', content: text }])
+    try {
+      await connectAndSubmit(selected.id, selected.profile, text, (type, payload) => {
+        if (type === 'message.delta') setStreaming(current => current + String(payload.text || ''))
+        if (type === 'message.complete') setStreaming(String(payload.text || ''))
+        if (type === 'error') setError(String(payload.message || 'Hermes could not complete that request.'))
+      })
+      await openSession(selected)
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not send to Hermes.')
+    } finally {
+      setSending(false)
+      setStreaming('')
+    }
+  }
+
+  const stop = async () => {
+    if (!selected || !sending) return
+    try { await interruptSession(selected.id) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not stop this Hermes turn.') }
+  }
+
+  const finishCreate = async () => {
+    setCreating(true)
+    setError('')
+    try {
+      await createProfile(botDraft)
+      setCreateOpen(false)
+      setCreateStep(0)
+      await refresh()
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not create this Bot.')
+    } finally { setCreating(false) }
+  }
+
+  if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
+  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} close={() => setSettings(false)} refresh={() => void refresh()}/>
+  if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} submit={() => void submit()} stop={() => void stop()}/>
+
+  return <main className="app roster-shell">
+    <header className="roster-head"><div><h1>{tab === 'bots' ? 'Bots' : 'Sessions'}</h1><span className={error ? 'connection offline' : 'connection'}>● <span>{loading ? 'Syncing…' : error ? 'Desktop unavailable' : 'Hermes Desktop'}</span></span></div><div className="header-actions"><button className="icon-button" aria-label="Search" onClick={() => setSearching(value => !value)}><Search size={18}/></button><button className="icon-button" aria-label="Settings" onClick={() => setSettings(true)}><SettingsIcon size={18}/></button></div></header>
+    {searching && <div className="search"><Search size={16}/><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={tab === 'bots' ? 'Search bots and group chats…' : 'Search sessions…'}/><button onClick={() => { setQuery(''); setSearching(false) }}><X size={16}/></button></div>}
+    <nav className="tabs"><button className={tab === 'bots' ? 'active' : ''} onClick={() => setTab('bots')}>Bots</button><button className={tab === 'sessions' ? 'active' : ''} onClick={() => setTab('sessions')}>Sessions</button></nav>
+    {error && <Notice message={error} retry={() => void refresh()}/>}
+    {loading && !profiles.length ? <Skeleton/> : tab === 'bots' ? <section className="bot-list">{rows.map(({ profile, session }, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={profile.name} disabled={!session} onClick={() => session && void openSession(session)}><Avatar profile={profile}/><span className="bot-copy"><b>{profile.display_name || titleize(profile.name)}</b><small>{session?.preview || profile.description || 'No messages yet'}</small></span><span className="meta">{ago(session?.last_active)}{session && <i className={session.unread ? 'unread' : ''}/>}</span></button>)}</section> : <section className="bot-list">{visibleSessions.map((session, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={`${session.profile}:${session.id}`} onClick={() => void openSession(session)}><span className="avatar-fallback">{initials(session.profile)}</span><span className="bot-copy"><b>{session.title || 'Untitled session'}</b><small>{titleize(session.profile)} · {session.preview}</small></span><span className="meta">{ago(session.last_active)}</span></button>)}</section>}
+    <footer className="roster-actions">{tab === 'bots' ? <><button className="secondary" disabled title="Group-room transport is not yet enabled"><Users size={16}/> New group</button><button className="primary" onClick={() => setCreateOpen(true)}><Plus size={16}/> New Bot</button></> : <button className="primary wide" onClick={() => setTab('bots')}>Back to Bots</button>}</footer>
+  </main>
+}
+
+function Avatar({ profile }: { profile: LiveProfile }) {
+  return <span className="avatar-fallback" style={{ '--hue': String([...profile.name].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 360) } as React.CSSProperties}>{initials(profile.display_name || profile.name)}</span>
+}
+
+function Notice({ message, retry }: { message: string; retry: () => void }) {
+  return <div className="notice"><b>Connection needs attention</b><span>{message}</span><button onClick={retry}>Try again</button></div>
+}
+function Skeleton() { return <div className="skeletons">{[1, 2, 3, 4, 5, 6].map(item => <i key={item}/>)}</div> }
+
+function ConnectionSettings({ profiles, sessions, close, refresh }: { profiles: number; sessions: number; close: () => void; refresh: () => void }) {
+  return <main className="app panel"><header className="panel-head"><button className="back-button" onClick={close}>‹</button><div><h2>Connection</h2><p>Hermes Desktop host</p></div></header><section className="connection-card"><span className="status-pill">● Connected</span><h3>This Windows PC</h3><code>127.0.0.1:9119</code><div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div><button className="primary wide" onClick={refresh}>Sync now</button></section><section className="menu-list"><button>Notifications <span>›</span></button><button>Appearance <span>OLED dark ›</span></button><button>Security & pairing <span>›</span></button><button>About Hermes Mobile <span>0.1.0 ›</span></button></section><p className="fine">The host owns models, credentials, tools, memory, skills, and approvals. This client is the control surface.</p></main>
+}
+
+function CreateWizard({ step, setStep, draft, setDraft, creating, error, close, finish }: { step: number; setStep: (step: number) => void; draft: DraftBot; setDraft: React.Dispatch<React.SetStateAction<DraftBot>>; creating: boolean; error: string; close: () => void; finish: () => void }) {
+  const titles = ['Who is this bot?', 'Personality', 'Model', 'Look']
+  const pickRole = (role: string) => { const [name, description] = roles[role]; setDraft(current => ({ ...current, role, name, description })) }
+  return <main className="app wizard"><header><button className="icon-button" onClick={close}><X size={18}/></button><div className="progress">{[0, 1, 2, 3].map(item => <i className={item === step ? 'current' : ''} key={item}/>)}</div></header><section><h1>{titles[step]}</h1>{step === 0 && <><p>Name it and give it a job.</p><div className="chips">{Object.keys(roles).map(role => <button className={draft.role === role ? 'selected' : ''} onClick={() => pickRole(role)} key={role}>{role}</button>)}</div><Field label="NAME"><input value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}/><small>Lowercase profile handle, for example research-rabbit.</small></Field><Field label="WHAT SHOULD IT DO?"><input value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}/></Field></>}{step === 1 && <><p>Optional — shape how it thinks and talks.</p><div className="explain">This becomes the Bot’s real SOUL.md and loads into every conversation.</div><Field label="SOUL"><textarea value={draft.soul} onChange={event => setDraft(current => ({ ...current, soul: event.target.value }))}/></Field></>}{step === 2 && <><p>Optional — pin a model, or use the Hermes default.</p><button className={!draft.model ? 'model-option selected' : 'model-option'} onClick={() => setDraft(current => ({ ...current, model: '', provider: '' }))}><b>Use Hermes default</b><small>Inherits this PC’s provider and model.</small></button><button className={draft.model === 'gpt-5.6-sol' ? 'model-option selected' : 'model-option'} onClick={() => setDraft(current => ({ ...current, model: 'gpt-5.6-sol', provider: 'openai-api' }))}>openai-api/gpt-5.6-sol</button></>}{step === 3 && <><p>Choose a symbol for the Bots roster.</p><div className="emoji-grid">{emojis.map(emoji => <button className={draft.emoji === emoji ? 'selected' : ''} onClick={() => setDraft(current => ({ ...current, emoji }))} key={emoji}>{emoji}</button>)}</div><div className="preview-bot"><span>{draft.emoji}</span><div><b>{draft.name || 'new-bot'}</b><small>{draft.description || 'A new Hermes Bot'}</small></div></div></>}{error && <p className="form-error">{error}</p>}</section><footer><button className="secondary" onClick={() => step ? setStep(step - 1) : close()}>{step ? 'Back' : 'Cancel'}</button><button className="primary" disabled={creating || (step === 0 && !draft.name)} onClick={() => step < 3 ? setStep(step + 1) : finish()}>{creating ? 'Creating…' : step === 3 ? 'Create Bot' : 'Continue'}</button></footer></main>
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="field"><span>{label}</span>{children}</label>
+}
