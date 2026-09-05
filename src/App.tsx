@@ -187,7 +187,7 @@ export default function App() {
 function Avatar({ profile }: { profile: LiveProfile }) {
   const [asset, setAsset] = useState<string | null>(null)
   const meta = profile.ui_meta?.['hermes-bots']
-  const svg = canonicalBlobatarSvg(profile.name, meta?.shape || 'blobatar', meta?.color)
+  const svg = canonicalBlobatarSvg(profile.name, meta?.shape || 'blobatar')
 
   useEffect(() => {
     let active = true

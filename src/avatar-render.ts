@@ -13,13 +13,12 @@ export const blobShapeTraits: Record<string, number> = {
   triangle: 0.99,
 }
 
-export function canonicalBlobatarSvg(profileName: string, shape = 'blobatar', color?: string): string {
+export function canonicalBlobatarSvg(profileName: string, shape = 'blobatar'): string {
   const parts = shape.split(':')
   const seed = parts[0] === 'blobatar' && parts[1] ? parts[1] : profileName
   const kind = parts[0] === 'blobatar' && parts[2] ? parts[2] : ''
   return blobatar(seed, {
     background: false,
     ...(kind && blobShapeTraits[kind] != null ? { traits: { shape: blobShapeTraits[kind] } } : {}),
-    ...(color ? { palette: { head: color } } : {}),
   })
 }
