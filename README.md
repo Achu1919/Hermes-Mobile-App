@@ -23,6 +23,9 @@
   <a href="https://hermes-agent.nousresearch.com/docs/">Hermes Docs</a>
 </p>
 
+> [!IMPORTANT]
+> **Hermes Agent is required first.** Hermes Mobile is an independent companion client, not an agent runtime. Before using it, install and configure [Hermes Agent by Nous Research](https://hermes-agent.nousresearch.com/) on the host PC. Hermes Desktop or a running Hermes gateway provides the real Bots, sessions, tools, approvals, and credentials that Hermes Mobile securely controls.
+
 ## Why Hermes Mobile
 
 I fell in love with Hermes, but could not find an Android client that let me control my Bots the way I wanted from my phone. Hermes Mobile is the companion I built: mobile-native, beautifully compact, and connected to the existing Hermes runtime rather than a second agent or copied provider credentials.
