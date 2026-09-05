@@ -3,7 +3,7 @@ import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, 
 
 import { probeHermesGateway } from '../hermes'
 
-const HermesMobileLogo = '/HermesMobileLogo.png'
+const HermesMobileLogo = '/HermesMobileMark.png'
 
 type Theme = 'dark' | 'light' | 'grey' | 'aurora'
 type Page = 'root' | 'pairing' | 'about'

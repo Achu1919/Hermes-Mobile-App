@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/HermesMobileLogo.png" alt="Hermes Mobile" width="176" />
+  <img src="docs/assets/HermesMobileMark.png" alt="Hermes Mobile" width="176" />
 </p>
 
 <h1 align="center">Hermes Mobile</h1>
