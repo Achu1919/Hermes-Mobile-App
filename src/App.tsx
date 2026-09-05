@@ -3,11 +3,13 @@ import { Plus, Search, Settings as SettingsIcon, Users, X } from 'lucide-react'
 
 import { ChatView } from './components/ChatView'
 import { BotAvatar } from './components/BotAvatar'
+import { BotAppearancePicker } from './components/BotAppearancePicker'
+import { BotProfileSheet } from './components/BotProfileSheet'
 import { buildBotRows } from './live-model'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession } from './hermes'
 
 type Tab = 'bots' | 'sessions'
-type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; emoji: string }
+type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; shape: string }
 type Theme = 'dark' | 'light' | 'grey' | 'aurora'
 export type ToolActivity = { id: string; name: string; status: 'running' | 'done' | 'failed'; duration_s?: number; summary?: string }
 
@@ -29,13 +31,13 @@ const roles: Record<string, [string, string]> = {
   Analyst: ['signal', 'Finds patterns and explains what matters.'],
   Custom: ['', ''],
 }
-const emojis = ['💻', '🤖', '🧠', '🐈', '🚀', '🔭', '⚡', '🎯', '📚', '🎨', '🔬', '🦉']
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('bots')
   const [profiles, setProfiles] = useState<LiveProfile[]>([])
   const [sessions, setSessions] = useState<LiveSession[]>([])
   const [selected, setSelected] = useState<LiveSession | null>(null)
+  const [profileSheet, setProfileSheet] = useState(false)
   const [messages, setMessages] = useState<LiveMessage[]>([])
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
@@ -52,7 +54,7 @@ export default function App() {
   const [botDraft, setBotDraft] = useState<DraftBot>({
     role: 'Coder', name: 'patch', description: 'Writes, reviews, and ships code.',
     soul: 'You are a pragmatic software engineer. Read surrounding code before changing it, keep diffs focused, and verify your work by running it.',
-    model: '', provider: '', emoji: '💻',
+    model: '', provider: '', shape: 'blobatar',
   })
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('hermes-mobile-theme') as Theme | null) || 'dark')
 
@@ -98,6 +100,7 @@ export default function App() {
 
   const openSession = async (session: LiveSession) => {
     setSelected(session)
+    setProfileSheet(false)
     setMessages([])
     setError('')
     try { setMessages(await loadMessages(session.id, session.profile)) }
@@ -171,7 +174,8 @@ export default function App() {
 
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()}/>
-  if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} submit={() => void submit()} stop={() => void stop()}/>
+  if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
+  if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={() => void submit()} stop={() => void stop()}/>
 
   return <main className="app roster-shell">
     <header className="roster-head"><div><h1>{tab === 'bots' ? 'Bots' : 'Sessions'}</h1><span className={error ? 'connection offline' : 'connection'}>● <span>{loading ? 'Syncing…' : error ? 'Desktop unavailable' : 'Hermes Desktop'}</span></span></div><div className="header-actions"><button className="icon-button" aria-label="Search" onClick={() => setSearching(value => !value)}><Search size={18}/></button><button className="icon-button" aria-label="Settings" onClick={() => setSettings(true)}><SettingsIcon size={18}/></button></div></header>
@@ -202,7 +206,7 @@ function ConnectionSettings({ profiles, sessions, theme, setTheme, close, refres
 function CreateWizard({ step, setStep, draft, setDraft, creating, error, close, finish }: { step: number; setStep: (step: number) => void; draft: DraftBot; setDraft: React.Dispatch<React.SetStateAction<DraftBot>>; creating: boolean; error: string; close: () => void; finish: () => void }) {
   const titles = ['Who is this bot?', 'Personality', 'Model', 'Look']
   const pickRole = (role: string) => { const [name, description] = roles[role]; setDraft(current => ({ ...current, role, name, description })) }
-  return <main className="app wizard"><header><button className="icon-button" onClick={close}><X size={18}/></button><div className="progress">{[0, 1, 2, 3].map(item => <i className={item === step ? 'current' : ''} key={item}/>)}</div></header><section><h1>{titles[step]}</h1>{step === 0 && <><p>Name it and give it a job.</p><div className="chips">{Object.keys(roles).map(role => <button className={draft.role === role ? 'selected' : ''} onClick={() => pickRole(role)} key={role}>{role}</button>)}</div><Field label="NAME"><input value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}/><small>Lowercase profile handle, for example research-rabbit.</small></Field><Field label="WHAT SHOULD IT DO?"><input value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}/></Field></>}{step === 1 && <><p>Optional — shape how it thinks and talks.</p><div className="explain">This becomes the Bot’s real SOUL.md and loads into every conversation.</div><Field label="SOUL"><textarea value={draft.soul} onChange={event => setDraft(current => ({ ...current, soul: event.target.value }))}/></Field></>}{step === 2 && <><p>Optional — pin a model, or use the Hermes default.</p><button className={!draft.model ? 'model-option selected' : 'model-option'} onClick={() => setDraft(current => ({ ...current, model: '', provider: '' }))}><b>Use Hermes default</b><small>Inherits this PC’s provider and model.</small></button><button className={draft.model === 'gpt-5.6-sol' ? 'model-option selected' : 'model-option'} onClick={() => setDraft(current => ({ ...current, model: 'gpt-5.6-sol', provider: 'openai-api' }))}>openai-api/gpt-5.6-sol</button></>}{step === 3 && <><p>Choose a symbol for the Bots roster.</p><div className="emoji-grid">{emojis.map(emoji => <button className={draft.emoji === emoji ? 'selected' : ''} onClick={() => setDraft(current => ({ ...current, emoji }))} key={emoji}>{emoji}</button>)}</div><div className="preview-bot"><span>{draft.emoji}</span><div><b>{draft.name || 'new-bot'}</b><small>{draft.description || 'A new Hermes Bot'}</small></div></div></>}{error && <p className="form-error">{error}</p>}</section><footer><button className="secondary" onClick={() => step ? setStep(step - 1) : close()}>{step ? 'Back' : 'Cancel'}</button><button className="primary" disabled={creating || (step === 0 && !draft.name)} onClick={() => step < 3 ? setStep(step + 1) : finish()}>{creating ? 'Creating…' : step === 3 ? 'Create Bot' : 'Continue'}</button></footer></main>
+  return <main className="app wizard"><header><button className="icon-button" onClick={close}><X size={18}/></button><div className="progress">{[0, 1, 2, 3].map(item => <i className={item === step ? 'current' : ''} key={item}/>)}</div></header><section><h1>{titles[step]}</h1>{step === 0 && <><p>Name it and give it a job.</p><div className="chips">{Object.keys(roles).map(role => <button className={draft.role === role ? 'selected' : ''} onClick={() => pickRole(role)} key={role}>{role}</button>)}</div><Field label="NAME"><input value={draft.name} onChange={event => setDraft(current => ({ ...current, name: event.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}/><small>Lowercase profile handle, for example research-rabbit.</small></Field><Field label="WHAT SHOULD IT DO?"><input value={draft.description} onChange={event => setDraft(current => ({ ...current, description: event.target.value }))}/></Field></>}{step === 1 && <><p>Optional — shape how it thinks and talks.</p><div className="explain">This becomes the Bot’s real SOUL.md and loads into every conversation.</div><Field label="SOUL"><textarea value={draft.soul} onChange={event => setDraft(current => ({ ...current, soul: event.target.value }))}/></Field></>}{step === 2 && <><p>Optional — pin a model, or use the Hermes default.</p><button className={!draft.model ? 'model-option selected' : 'model-option'} onClick={() => setDraft(current => ({ ...current, model: '', provider: '' }))}><b>Use Hermes default</b><small>Inherits this PC’s provider and model.</small></button><button className={draft.model === 'gpt-5.6-sol' ? 'model-option selected' : 'model-option'} onClick={() => setDraft(current => ({ ...current, model: 'gpt-5.6-sol', provider: 'openai-api' }))}>openai-api/gpt-5.6-sol</button></>}{step === 3 && <><p>Choose an avatar that remains identical in Hermes Desktop and Mobile.</p><BotAppearancePicker name={draft.name} shape={draft.shape} onShape={shape => setDraft(current => ({ ...current, shape }))}/></>}{error && <p className="wizard-error">{error}</p>}</section><footer><button className="secondary" onClick={() => step ? setStep(step - 1) : close()}>{step ? 'Back' : 'Cancel'}</button><button className="primary" disabled={creating || (step === 0 && !draft.name)} onClick={() => step < 3 ? setStep(step + 1) : finish()}>{creating ? 'Creating…' : step < 3 ? 'Continue' : 'Create Bot'}</button></footer></main>
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {

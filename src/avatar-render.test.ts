@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { canonicalBlobatarSvg } from './avatar-render'
+import { canonicalBlobatarSvg, canonicalProfileAvatarSvg } from './avatar-render'
 
 describe('Desktop Bot Mode avatar contract', () => {
   it('uses the stored blobatar seed and kind with Desktop’s derived palette', () => {
@@ -15,5 +15,12 @@ describe('Desktop Bot Mode avatar contract', () => {
 
   it('falls back to Desktop blobatar name determinism when no custom shape exists', () => {
     expect(canonicalBlobatarSvg('research-rabbit')).toBe(canonicalBlobatarSvg('research-rabbit'))
+  })
+
+  it('uses the profile-owned legacy shape and color instead of rerolling Blobatar', () => {
+    const svg = canonicalProfileAvatarSvg('gaetan', 'circle', 'hsl(30 68% 58%)')
+    expect(svg).toContain('hsl(30 68% 58%)')
+    expect(svg).toContain('<circle')
+    expect(svg).not.toContain('#c458a6')
   })
 })

@@ -20,6 +20,8 @@ type Props = {
   error: string
   back: () => void
   refresh: () => void
+  openProfile: () => void
+  onSessionModelChange: (model: string) => void
   submit: () => void
   stop: () => void
 }
@@ -28,7 +30,7 @@ const reasoningChoices = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', '
 const labelReasoning = (value: string) => value === 'none' ? 'Off' : value === 'xhigh' ? 'XHigh' : value[0].toUpperCase() + value.slice(1)
 const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
 
-export function ChatView({ session, messages, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, submit, stop }: Props) {
+export function ChatView({ session, messages, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, openProfile, onSessionModelChange, submit, stop }: Props) {
   const threadRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -134,6 +136,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
       await setSessionModel(session.id, session.profile, nextProvider, nextModel)
       setProvider(nextProvider)
       setModel(nextModel)
+      onSessionModelChange(nextModel)
       setModelMenu(false)
     } catch (reason) { setControlError(reason instanceof Error ? reason.message : 'Could not change this chat model.') }
   }
@@ -177,7 +180,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   return <main className="app chat-shell">
     <header className="chat-header">
       <button className="round-control" onClick={back} aria-label="Back"><ArrowDown size={18} className="back-chevron"/></button>
-      <div className="chat-title"><BotAvatar profile={botProfile} fallbackName={session.profile} variant="header"/><span><b>{botName}</b><small>{botName} · {sending ? 'Working' : model || 'Hermes default'}</small></span></div>
+      <div className="chat-title"><button className="chat-identity-button" onClick={openProfile} aria-label={`Open ${botName} settings`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="header"/><span><b>{botName}</b><small>{botName} · {sending ? 'Working' : model || 'Hermes default'}</small></span></button></div>
       <button className="round-control" onClick={refresh} aria-label="Refresh conversation"><RotateCw size={16}/></button>
     </header>
 

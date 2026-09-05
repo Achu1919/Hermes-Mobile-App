@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { canonicalBlobatarSvg } from '../avatar-render'
+import { canonicalProfileAvatarSvg } from '../avatar-render'
 import { loadProfileAvatar, type LiveProfile } from '../hermes'
 
 export type BotAvatarVariant = 'roster' | 'session' | 'header' | 'welcome' | 'mention'
@@ -16,7 +16,7 @@ const initials = (name: string) => name.split(/[-_ ]+/).filter(Boolean).slice(0,
 export function BotAvatar({ profile, fallbackName, variant = 'roster' }: Props) {
   const [asset, setAsset] = useState<string | null>(null)
   const meta = profile?.ui_meta?.['hermes-bots']
-  const svg = profile ? canonicalBlobatarSvg(profile.name, meta?.shape || 'blobatar') : ''
+  const svg = profile ? canonicalProfileAvatarSvg(profile.name, meta?.shape, meta?.color) : ''
   const className = `bot-avatar-slot bot-avatar-${variant}`
 
   useEffect(() => {

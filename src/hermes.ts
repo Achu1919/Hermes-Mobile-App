@@ -8,6 +8,14 @@ export type LiveSession = { id: string; title: string; preview: string; profile:
 export type LiveMessage = { id: number; role: 'user' | 'assistant' | 'tool' | 'system'; content: string; tool_name?: string | null; tool_status?: 'running' | 'done' | 'failed'; duration_s?: number; reasoning?: string | null; timestamp?: number }
 export type ModelProvider = { name: string; slug: string; models?: string[]; featured_models?: string[]; authenticated?: boolean }
 export type ModelOptions = { model?: string; provider?: string; providers?: ModelProvider[] }
+export type ProfileDetails = {
+  name: string
+  description?: string
+  soul?: string
+  model?: { provider?: string; default?: string }
+  skills?: Array<{ name: string; enabled: boolean }>
+  toolsets?: Array<{ name: string; label?: string; description?: string; tool_count?: number; enabled: boolean }>
+}
 type Snapshot = { sessions: { sessions: LiveSession[] } }
 
 export function buildCanonicalSessionParams(profile: string): Record<string, unknown> {
@@ -46,7 +54,7 @@ export async function loadSnapshot(baseUrl = localHermes): Promise<{ profiles: L
   return { profiles: roster.profiles, sessions: snapshot.sessions.sessions }
 }
 
-export async function createProfile(input: { name: string; description: string; soul: string; model?: string; provider?: string }, baseUrl = localHermes): Promise<void> {
+export async function createProfile(input: { name: string; description: string; soul: string; model?: string; provider?: string; shape?: string; color?: string; title?: string }, baseUrl = localHermes): Promise<void> {
   await rpcCall('profiles.create', {
     name: input.name,
     description: input.description,
@@ -58,6 +66,21 @@ export async function createProfile(input: { name: string; description: string; 
     clone_all: false,
     no_skills: false,
   }, baseUrl)
+
+  if (input.shape) {
+    await rpcCall('profiles.configure', {
+      name: input.name,
+      ui_meta: {
+        'hermes-bots': {
+          shape: input.shape,
+          ...(input.color ? { color: input.color } : {}),
+          imageKind: 'shape',
+          title: input.title || '',
+          custom: true,
+        },
+      },
+    }, baseUrl)
+  }
 
   // Hermes Desktop births a Bot's canonical hidden conversation immediately
   // after creating the profile. Without this step the roster refresh has no
@@ -89,6 +112,16 @@ export async function loadModelOptions(profile: string, baseUrl = localHermes): 
 export async function loadProfileAvatar(profile: string, baseUrl = localHermes): Promise<string | null> {
   const result = await rpcCall<{ found?: boolean; data?: string }>('profiles.get_asset', { name: profile, asset: 'avatar' }, baseUrl)
   return result.found && result.data ? result.data : null
+}
+
+export async function loadProfileDetails(profile: string, baseUrl = localHermes): Promise<ProfileDetails> {
+  return rpcCall<ProfileDetails>('profiles.describe', { name: profile }, baseUrl)
+}
+
+export async function setProfileModel(profile: string, provider: string, model: string, baseUrl = localHermes): Promise<void> {
+  const result = await rpcCall<{ ok?: boolean; confirm_required?: boolean; confirm_message?: string }>('profiles.configure', { name: profile, provider, model }, baseUrl)
+  if (result.confirm_required) throw new Error(result.confirm_message || 'This model requires confirmation in Hermes Desktop before it can become the Bot default.')
+  if (result.ok === false) throw new Error('Hermes could not update the Bot default model.')
 }
 
 export async function setSessionModel(sessionId: string, profile: string, provider: string, model: string, baseUrl = localHermes): Promise<void> {
