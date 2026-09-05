@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, BrainCircuit, ChevronDown, Folder, Mic, Paperclip, 
 
 import { loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions } from '../hermes'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
+import type { ToolActivity } from '../App'
 
 type Timeline = LiveMessage & { local?: boolean }
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
   mentions: LiveProfile[]
   streaming: string
   sending: boolean
+  toolActivities: ToolActivity[]
   error: string
   back: () => void
   refresh: () => void
@@ -26,7 +28,7 @@ const labelReasoning = (value: string) => value === 'none' ? 'Off' : value === '
 const initials = (name: string) => name.split(/[-_ ]+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
 
-export function ChatView({ session, messages, profiles, draft, setDraft, mentions, streaming, sending, error, back, refresh, submit, stop }: Props) {
+export function ChatView({ session, messages, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, submit, stop }: Props) {
   const threadRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -126,7 +128,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   const chooseModel = async (nextProvider: string, nextModel: string) => {
     setControlError('')
     try {
-      await setSessionModel(session.id, nextProvider, nextModel)
+      await setSessionModel(session.id, session.profile, nextProvider, nextModel)
       setProvider(nextProvider)
       setModel(nextModel)
       setModelMenu(false)
@@ -136,7 +138,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   const chooseReasoning = async (effort: string) => {
     setControlError('')
     try {
-      await setSessionReasoning(session.id, effort)
+      await setSessionReasoning(session.id, session.profile, effort)
       setReasoning(effort)
       setReasoningMenu(false)
     } catch (reason) { setControlError(reason instanceof Error ? reason.message : 'Could not change reasoning effort.') }
@@ -181,6 +183,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
     <div className="thread-scroll" ref={threadRef} onScroll={onScroll}>
       <div className="thread-content" ref={contentRef}>
         {messages.map(message => <MessageCard key={message.id} message={message} onEdit={editMessage}/>)}
+        {toolActivities.map(activity => <ToolActivityRow activity={activity} key={activity.id}/>)}
         {sending && <article className="message-row assistant-row live-response">
           <div className="live-label"><span className="stream-pulse"/> {streaming ? 'Responding' : 'Thinking'}</div>
           {streaming && <MarkdownContent>{streaming}</MarkdownContent>}
@@ -215,4 +218,10 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
       <div className="context-row"><button><Folder size={13}/><span>{session.profile}</span><ChevronDown size={12}/></button><button><BrainCircuit size={13}/><span>Default</span><ChevronDown size={12}/></button></div>
     </footer>
   </main>
+}
+
+function ToolActivityRow({ activity }: { activity: ToolActivity }) {
+  const running = activity.status === 'running'
+  const failed = activity.status === 'failed'
+  return <div className={`live-tool ${failed ? 'failed' : ''}`}><span className={running ? 'tool-spinner' : 'tool-state'}>{running ? '⋯' : failed ? '!' : '✓'}</span><span><b>{activity.name}</b><small>{running ? 'running…' : failed ? 'failed' : activity.summary || 'done'}</small></span>{activity.duration_s != null && <time>{activity.duration_s.toFixed(1)}s</time>}</div>
 }

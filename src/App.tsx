@@ -7,6 +7,7 @@ import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSn
 
 type Tab = 'bots' | 'sessions'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; emoji: string }
+export type ToolActivity = { id: string; name: string; status: 'running' | 'done' | 'failed'; duration_s?: number; summary?: string }
 
 const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
 const initials = (name: string) => name.split(/[-_ ]+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase()
@@ -40,6 +41,7 @@ export default function App() {
   const [error, setError] = useState('')
   const [streaming, setStreaming] = useState('')
   const [sending, setSending] = useState(false)
+  const [toolActivities, setToolActivities] = useState<ToolActivity[]>([])
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [settings, setSettings] = useState(false)
@@ -52,15 +54,17 @@ export default function App() {
     model: '', provider: '', emoji: '💻',
   })
 
-  const refresh = async () => {
+  const refresh = async (): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] } | null> => {
     setLoading(true)
     setError('')
     try {
       const data = await loadSnapshot()
       setProfiles(data.profiles)
       setSessions(data.sessions)
+      return data
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not connect to Hermes Desktop.')
+      return null
     } finally { setLoading(false) }
   }
 
@@ -101,11 +105,20 @@ export default function App() {
     setError('')
     setSending(true)
     setStreaming('')
+    setToolActivities([])
     setMessages(items => [...items, { id: -Date.now(), role: 'user', content: text }])
     try {
       await connectAndSubmit(selected.id, selected.profile, text, (type, payload) => {
         if (type === 'message.delta') setStreaming(current => current + String(payload.text || ''))
         if (type === 'message.complete') setStreaming(String(payload.text || ''))
+        if (type === 'tool.start') setToolActivities(items => {
+          const id = String(payload.tool_id || payload.name || `tool-${items.length}`)
+          return [...items.filter(item => item.id !== id), { id, name: String(payload.name || 'tool'), status: 'running', summary: typeof payload.context === 'string' ? payload.context : undefined }]
+        })
+        if (type === 'tool.complete') setToolActivities(items => {
+          const id = String(payload.tool_id || payload.name || `tool-${items.length}`)
+          return [...items.filter(item => item.id !== id), { id, name: String(payload.name || 'tool'), status: 'done', duration_s: typeof payload.duration_s === 'number' ? payload.duration_s : undefined, summary: typeof payload.summary === 'string' ? payload.summary : undefined }]
+        })
         if (type === 'error') setError(String(payload.message || 'Hermes could not complete that request.'))
       })
       await openSession(selected)
@@ -131,7 +144,20 @@ export default function App() {
       await createProfile(botDraft)
       setCreateOpen(false)
       setCreateStep(0)
-      await refresh()
+      const data = await refresh()
+      const createdProfile = data?.profiles.find(profile => profile.name === botDraft.name)
+      const canonical = createdProfile?.canonical_session
+      if (createdProfile && canonical) {
+        await openSession({
+          id: canonical.resolved_id || canonical.id,
+          title: createdProfile.display_name || titleize(createdProfile.name),
+          preview: canonical.preview || '',
+          profile: createdProfile.name,
+          model: createdProfile.model,
+          last_active: canonical.last_active,
+          unread: false,
+        })
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not create this Bot.')
     } finally { setCreating(false) }
@@ -139,7 +165,7 @@ export default function App() {
 
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} close={() => setSettings(false)} refresh={() => void refresh()}/>
-  if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} submit={() => void submit()} stop={() => void stop()}/>
+  if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} submit={() => void submit()} stop={() => void stop()}/>
 
   return <main className="app roster-shell">
     <header className="roster-head"><div><h1>{tab === 'bots' ? 'Bots' : 'Sessions'}</h1><span className={error ? 'connection offline' : 'connection'}>● <span>{loading ? 'Syncing…' : error ? 'Desktop unavailable' : 'Hermes Desktop'}</span></span></div><div className="header-actions"><button className="icon-button" aria-label="Search" onClick={() => setSearching(value => !value)}><Search size={18}/></button><button className="icon-button" aria-label="Settings" onClick={() => setSettings(true)}><SettingsIcon size={18}/></button></div></header>

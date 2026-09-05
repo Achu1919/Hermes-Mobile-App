@@ -43,6 +43,10 @@ export class GatewayRpcError extends Error {
 
 const terminalTypes = new Set(['message.complete', 'turn.end', 'turn.error', 'error'])
 
+export function buildSessionResumeParams(sessionId: string, profile?: string): GatewayPayload {
+  return { session_id: sessionId, ...(profile ? { profile } : {}) }
+}
+
 export function parseGatewayEvent(params: GatewayPayload): GatewayEvent | null {
   if (typeof params.type !== 'string' || !params.type) return null
   const payload = params.payload && typeof params.payload === 'object'
@@ -186,10 +190,7 @@ export class HermesGatewayClient {
   }
 
   async resumeSession(sessionId: string, profile?: string): Promise<string> {
-    const result = await this.call<{ session_id?: string }>('session.resume', {
-      session_id: sessionId,
-      ...(profile ? { profile } : {}),
-    })
+    const result = await this.call<{ session_id?: string }>('session.resume', buildSessionResumeParams(sessionId, profile))
     return result.session_id || sessionId
   }
 

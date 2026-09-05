@@ -5,10 +5,19 @@ import type { RosterProfile } from './live-model'
 
 export type LiveProfile = RosterProfile
 export type LiveSession = { id: string; title: string; preview: string; profile: string; model?: string; unread?: boolean; last_active?: number }
-export type LiveMessage = { id: number; role: 'user' | 'assistant' | 'tool' | 'system'; content: string; tool_name?: string | null; reasoning?: string | null; timestamp?: number }
+export type LiveMessage = { id: number; role: 'user' | 'assistant' | 'tool' | 'system'; content: string; tool_name?: string | null; tool_status?: 'running' | 'done' | 'failed'; duration_s?: number; reasoning?: string | null; timestamp?: number }
 export type ModelProvider = { name: string; slug: string; models?: string[]; featured_models?: string[]; authenticated?: boolean }
 export type ModelOptions = { model?: string; provider?: string; providers?: ModelProvider[] }
 type Snapshot = { sessions: { sessions: LiveSession[] } }
+
+export function buildCanonicalSessionParams(profile: string): Record<string, unknown> {
+  return {
+    profile,
+    title: 'Bot Chat',
+    hidden: true,
+    follow_profile_config: true,
+  }
+}
 
 export const localHermes = 'http://127.0.0.1:9119'
 
@@ -49,6 +58,16 @@ export async function createProfile(input: { name: string; description: string; 
     clone_all: false,
     no_skills: false,
   }, baseUrl)
+
+  // Hermes Desktop births a Bot's canonical hidden conversation immediately
+  // after creating the profile. Without this step the roster refresh has no
+  // Bot Chat to resolve and the user lands back on the inbox instead of the
+  // new conversation.
+  const client = gateway(baseUrl)
+  const created = await client.call<{ session_id?: string; stored_session_id?: string }>('session.create', buildCanonicalSessionParams(input.name))
+  if (created.session_id) {
+    await client.call('session.title', { session_id: created.session_id, title: 'Bot Chat' })
+  }
 }
 
 export async function loadMessages(sessionId: string, profile: string, baseUrl = localHermes): Promise<LiveMessage[]> {
@@ -67,14 +86,14 @@ export async function loadModelOptions(profile: string, baseUrl = localHermes): 
   return JSON.parse(raw) as ModelOptions
 }
 
-export async function setSessionModel(sessionId: string, provider: string, model: string, baseUrl = localHermes): Promise<void> {
-  const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId)
+export async function setSessionModel(sessionId: string, profile: string, provider: string, model: string, baseUrl = localHermes): Promise<void> {
+  const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
   resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
   await gateway(baseUrl).setSessionModel(resolved, provider, model)
 }
 
-export async function setSessionReasoning(sessionId: string, effort: string, baseUrl = localHermes): Promise<void> {
-  const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId)
+export async function setSessionReasoning(sessionId: string, profile: string, effort: string, baseUrl = localHermes): Promise<void> {
+  const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
   resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
   await gateway(baseUrl).setSessionReasoning(resolved, effort)
 }
