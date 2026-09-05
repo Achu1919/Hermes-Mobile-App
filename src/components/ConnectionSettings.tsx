@@ -44,7 +44,7 @@ function AboutHermesMobile({ back }: { back: () => void }) {
       <span>Control your Hermes workspace from wherever you are.</span>
     </section>
     <section className="about-story">
-      <p>I fell in love with Hermes, but couldn’t find an Android client that let me control my Bots the way I wanted from my phone. So I built Hermes Mobile: a polished, host-first companion for the Hermes Desktop runtime.</p>
+      <p>I fell in love with Hermes, and after seeing early Android teasers around the new Bot capabilities, I started building the mobile client I wanted: a polished, host-first companion for controlling my Bots from my phone.</p>
       <p>Your Windows PC remains the authority for your agents, credentials, approvals, tools, sessions, and files. Hermes Mobile is the secure control surface in your pocket. Hope you enjoy it.</p>
     </section>
     <section className="about-links" aria-label="Hermes Mobile and Hermes links">
@@ -56,7 +56,7 @@ function AboutHermesMobile({ back }: { back: () => void }) {
       <a {...external('https://github.com/NousResearch/hermes-agent')}><GitBranch size={18}/><span><b>Hermes Agent on GitHub</b><small>Open-source agent runtime</small></span><ExternalLink size={16}/></a>
       <a {...external('https://discord.gg/NousResearch')}><Heart size={18}/><span><b>Nous Research Discord</b><small>Community and support</small></span><ExternalLink size={16}/></a>
     </section>
-    <p className="about-footer">Built independently for the Hermes community. Hermes Agent is open source under the MIT License.</p>
+    <p className="about-footer">An independent community project, unaffiliated with Nous Research or Hermes Agent. Built with appreciation for the Hermes community.</p>
   </main>
 }
 

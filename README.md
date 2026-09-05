@@ -4,9 +4,9 @@
   </a>
   <h1>Hermes Mobile</h1>
 
-  A polished, cross-platform control surface for your running Hermes Desktop host.
+  A polished, cross-platform control surface for Hermes Desktop host.
 
-  Hermes Mobile keeps your real Bots, sessions, tools, approvals, and credentials on the host PC—then puts a compact, mobile-native control surface in your pocket.
+  Hermes Mobile hooks into your real Bots, sessions, tools, approvals, and credentials on the host PC—then puts the control surface in your pocket.
 
   [![Repository][badge-repository]][link-repo]
   [![Platforms][badge-platforms]][link-repo]
@@ -28,6 +28,8 @@
 I fell in love with Hermes, but could not find an Android client that let me control my Bots the way I wanted from my phone. Hermes Mobile is the companion I built: mobile-native, beautifully compact, and connected to the existing Hermes runtime rather than a second agent or copied provider credentials.
 
 Your host PC remains the authority for agents, credentials, approvals, tools, sessions, files, and durable history. Hermes Mobile is the secure control surface in your pocket. Hope you enjoy it.
+
+Hermes Mobile is an independent community project, not affiliated with or endorsed by Nous Research or Hermes Agent. It grew from a genuine appreciation for their work and excitement around the new Bot capabilities.
 
 ## Run locally
 
