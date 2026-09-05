@@ -44,8 +44,8 @@ function AboutHermesMobile({ back }: { back: () => void }) {
       <span>Control your Hermes workspace from wherever you are.</span>
     </section>
     <section className="about-story">
-      <p>I fell in love with Hermes, and after seeing early Android teasers around the new Bot capabilities, I started building the mobile client I wanted: a polished, host-first companion for controlling my Bots from my phone.</p>
-      <p>Your Windows PC remains the authority for your agents, credentials, approvals, tools, sessions, and files. Hermes Mobile is the secure control surface in your pocket. Hope you enjoy it.</p>
+      <p>I fell in love with Hermes after using the new Bot capabilities, and started building the mobile client I wanted: a polished, host-first companion for controlling your Hermes Bots from your phone.</p>
+      <p>Your computer &amp; hermes setup still remains the authority for your agents, credentials, approvals, tools, sessions, and files. Hermes Mobile is the mission-control surface in your pocket, similar to Grok Bot! Hope you enjoy it as much as I do&nbsp; - Creator SteStein.com</p>
     </section>
     <section className="about-links" aria-label="Hermes Mobile and Hermes links">
       <p>HERMES MOBILE</p>
