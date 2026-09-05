@@ -1,0 +1,17 @@
+/* Mobile shell: never reserve a desktop scrollbar gutter. Local transcript/model/code
+   scrollers keep their own interaction surfaces. */
+html,body,#root{scrollbar-width:none;overflow-x:hidden}
+html::-webkit-scrollbar,body::-webkit-scrollbar,#root::-webkit-scrollbar{display:none;width:0;height:0}
+.app{scrollbar-width:none}
+.app::-webkit-scrollbar{display:none;width:0;height:0}
+.app.chat-shell .chat-dock{padding-bottom:calc(10px + env(safe-area-inset-bottom))}
+.app.chat-shell .latest-button{bottom:calc(92px + env(safe-area-inset-bottom))}
+.app.chat-shell .mention-popover,.app.chat-shell .model-popover,.app.chat-shell .reasoning-popover{bottom:calc(86px + env(safe-area-inset-bottom))}
+.app.chat-shell .model-list{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.24) transparent}
+.app.chat-shell .model-list::-webkit-scrollbar{width:5px}
+.app.chat-shell .model-list::-webkit-scrollbar-track{background:transparent}
+.app.chat-shell .model-list::-webkit-scrollbar-thumb{background:rgba(255,255,255,.24);border-radius:99px}
+.code-block pre,.table-scroll{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,.2) transparent}
+.code-block pre::-webkit-scrollbar,.table-scroll::-webkit-scrollbar{height:5px}
+.code-block pre::-webkit-scrollbar-track,.table-scroll::-webkit-scrollbar-track{background:transparent}
+.code-block pre::-webkit-scrollbar-thumb,.table-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:99px}

@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, BrainCircuit, ChevronDown, Folder, Mic, Paperclip, RotateCw, Search, Square, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, BrainCircuit, ChevronDown, Mic, Paperclip, RotateCw, Search, Square, X } from 'lucide-react'
 
 import { loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions } from '../hermes'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
@@ -215,7 +215,6 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
           {sending ? <button className="composer-send stop" onClick={stop} aria-label="Stop Hermes"><Square size={12} fill="currentColor"/></button> : <button className="composer-send" disabled={!draft.trim()} onClick={submit} aria-label="Send message"><ArrowUp size={17}/></button>}
         </div>
       </div>}
-      <div className="context-row"><button><Folder size={13}/><span>{session.profile}</span><ChevronDown size={12}/></button><button><BrainCircuit size={13}/><span>Default</span><ChevronDown size={12}/></button></div>
     </footer>
   </main>
 }

@@ -5,5 +5,6 @@ import './styles.css'
 import './chat.css'
 import './wizard.css'
 import './activity.css'
+import './mobile-overrides.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
