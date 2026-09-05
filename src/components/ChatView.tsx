@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, BrainCircuit, ChevronDown, Mic, Paperclip, RotateCw, Search, Square, X } from 'lucide-react'
 
 import { loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions } from '../hermes'
+import { BotAvatar } from './BotAvatar'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
 import type { ToolActivity } from '../App'
 
@@ -25,7 +26,6 @@ type Props = {
 
 const reasoningChoices = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 const labelReasoning = (value: string) => value === 'none' ? 'Off' : value === 'xhigh' ? 'XHigh' : value[0].toUpperCase() + value.slice(1)
-const initials = (name: string) => name.split(/[-_ ]+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
 
 export function ChatView({ session, messages, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, submit, stop }: Props) {
@@ -47,11 +47,14 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [transcribing, setTranscribing] = useState(false)
+  const botProfile = profiles.find(profile => profile.name === session.profile)
+  const botName = botProfile?.display_name || (session.title && session.title !== 'Bot Chat' ? session.title : titleize(session.profile))
 
   const mentionOpen = /@[\w-]*$/.test(draft)
   const allModels = useMemo(() => (modelOptions.providers || []).flatMap(item => (item.featured_models?.length ? item.featured_models : item.models || []).map(name => ({ name, provider: item.slug, providerName: item.name, authenticated: item.authenticated !== false }))).filter((item, index, rows) => rows.findIndex(other => other.provider === item.provider && other.name === item.name) === index), [modelOptions])
   const filteredModels = useMemo(() => allModels.filter(item => `${item.name} ${item.providerName}`.toLowerCase().includes(modelSearch.toLowerCase())), [allModels, modelSearch])
   const visibleError = error || controlError
+  const showEmptyState = !messages.length && !sending && !streaming && !toolActivities.length && !visibleError
 
   const scrollToLatest = (behavior: ScrollBehavior = 'smooth') => {
     const thread = threadRef.current
@@ -174,7 +177,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   return <main className="app chat-shell">
     <header className="chat-header">
       <button className="round-control" onClick={back} aria-label="Back"><ArrowDown size={18} className="back-chevron"/></button>
-      <div className="chat-title"><span className="avatar-fallback small">{initials(session.profile)}</span><span><b>{session.title}</b><small>{titleize(session.profile)} · {sending ? 'Working' : model || 'Hermes default'}</small></span></div>
+      <div className="chat-title"><BotAvatar profile={botProfile} fallbackName={session.profile} variant="header"/><span><b>{botName}</b><small>{botName} · {sending ? 'Working' : model || 'Hermes default'}</small></span></div>
       <button className="round-control" onClick={refresh} aria-label="Refresh conversation"><RotateCw size={16}/></button>
     </header>
 
@@ -182,6 +185,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
 
     <div className="thread-scroll" ref={threadRef} onScroll={onScroll}>
       <div className="thread-content" ref={contentRef}>
+        {showEmptyState && <section className="chat-empty-state" aria-label={`Start a conversation with ${botName}`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="welcome"/><h1>{botName.toUpperCase()}</h1><p>Say something to get started.</p></section>}
         {messages.map(message => <MessageCard key={message.id} message={message} onEdit={editMessage}/>)}
         {toolActivities.map(activity => <ToolActivityRow activity={activity} key={activity.id}/>)}
         {sending && <article className="message-row assistant-row live-response">
@@ -193,7 +197,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
 
     {!following && <button className="latest-button" onClick={() => scrollToLatest()}><ArrowDown size={15}/><span>Latest{unreadBelow ? ` · ${unreadBelow}` : ''}</span></button>}
 
-    {mentionOpen && <div className="mention-popover">{mentions.slice(0, 6).map(item => <button key={item.name} onClick={() => setDraft(draft.replace(/@[\w-]*$/, `@${item.name} `))}><span className="avatar-fallback tiny">{initials(item.display_name || item.name)}</span><span><b>{item.display_name || titleize(item.name)}</b><small>@{item.name}</small></span></button>)}</div>}
+    {mentionOpen && <div className="mention-popover">{mentions.slice(0, 6).map(item => <button key={item.name} onClick={() => setDraft(draft.replace(/@[\w-]*$/, `@${item.name} `))}><BotAvatar profile={item} fallbackName={item.name} variant="mention"/><span><b>{item.display_name || titleize(item.name)}</b><small>@{item.name}</small></span></button>)}</div>}
 
     {(modelMenu || reasoningMenu) && <button className="popover-scrim" aria-label="Close menu" onClick={() => { setModelMenu(false); setReasoningMenu(false) }}/>} 
     {modelMenu && <section className="model-popover">

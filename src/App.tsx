@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Bot, Plus, Search, Settings as SettingsIcon, Users, X } from 'lucide-react'
+import { Plus, Search, Settings as SettingsIcon, Users, X } from 'lucide-react'
 
 import { ChatView } from './components/ChatView'
-import { canonicalBlobatarSvg } from './avatar-render'
+import { BotAvatar } from './components/BotAvatar'
 import { buildBotRows } from './live-model'
-import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadProfileAvatar, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession } from './hermes'
+import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession } from './hermes'
 
 type Tab = 'bots' | 'sessions'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; emoji: string }
@@ -12,7 +12,6 @@ type Theme = 'dark' | 'light' | 'grey' | 'aurora'
 export type ToolActivity = { id: string; name: string; status: 'running' | 'done' | 'failed'; duration_s?: number; summary?: string }
 
 const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
-const initials = (name: string) => name.split(/[-_ ]+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 const ago = (seconds?: number) => {
   if (!seconds) return ''
   const delta = Math.max(0, Date.now() / 1000 - seconds)
@@ -179,25 +178,9 @@ export default function App() {
     {searching && <div className="search"><Search size={16}/><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={tab === 'bots' ? 'Search bots and group chats…' : 'Search sessions…'}/><button onClick={() => { setQuery(''); setSearching(false) }}><X size={16}/></button></div>}
     <nav className="tabs"><button className={tab === 'bots' ? 'active' : ''} onClick={() => setTab('bots')}>Bots</button><button className={tab === 'sessions' ? 'active' : ''} onClick={() => setTab('sessions')}>Sessions</button></nav>
     {error && <Notice message={error} retry={() => void refresh()}/>}
-    {loading && !profiles.length ? <Skeleton/> : tab === 'bots' ? <section className="bot-list">{rows.map(({ profile, session }, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={profile.name} disabled={!session} onClick={() => session && void openSession(session)}><Avatar profile={profile}/><span className="bot-copy"><b>{profile.display_name || titleize(profile.name)}</b><small>{session?.preview || profile.description || 'No messages yet'}</small></span><span className="meta">{ago(session?.last_active)}{session && <i className={session.unread ? 'unread' : ''}/>}</span></button>)}</section> : <section className="bot-list">{visibleSessions.map((session, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={`${session.profile}:${session.id}`} onClick={() => void openSession(session)}><span className="avatar-fallback">{initials(session.profile)}</span><span className="bot-copy"><b>{session.title || 'Untitled session'}</b><small>{titleize(session.profile)} · {session.preview}</small></span><span className="meta">{ago(session.last_active)}</span></button>)}</section>}
+    {loading && !profiles.length ? <Skeleton/> : tab === 'bots' ? <section className="bot-list">{rows.map(({ profile, session }, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={profile.name} disabled={!session} onClick={() => session && void openSession(session)}><BotAvatar profile={profile} fallbackName={profile.name}/><span className="bot-copy"><b>{profile.display_name || titleize(profile.name)}</b><small>{session?.preview || profile.description || 'No messages yet'} </small></span><span className="meta">{ago(session?.last_active)}{session && <i className={session.unread ? 'unread' : ''}/>}</span></button>)}</section> : <section className="bot-list">{visibleSessions.map((session, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={`${session.profile}:${session.id}`} onClick={() => void openSession(session)}><BotAvatar profile={profiles.find(profile => profile.name === session.profile)} fallbackName={session.profile} variant="session"/><span className="bot-copy"><b>{session.title || 'Untitled session'}</b><small>{titleize(session.profile)} · {session.preview}</small></span><span className="meta">{ago(session.last_active)}</span></button>)}</section>}
     <footer className="roster-actions">{tab === 'bots' ? <><button className="secondary" disabled title="Group-room transport is not yet enabled"><Users size={16}/> New group</button><button className="primary" onClick={() => setCreateOpen(true)}><Plus size={16}/> New Bot</button></> : <button className="primary wide" onClick={() => setTab('bots')}>Back to Bots</button>}</footer>
   </main>
-}
-
-function Avatar({ profile }: { profile: LiveProfile }) {
-  const [asset, setAsset] = useState<string | null>(null)
-  const meta = profile.ui_meta?.['hermes-bots']
-  const svg = canonicalBlobatarSvg(profile.name, meta?.shape || 'blobatar')
-
-  useEffect(() => {
-    let active = true
-    if (!profile.has_avatar || meta?.imageKind === 'shape') return () => { active = false }
-    void loadProfileAvatar(profile.name).then(value => { if (active) setAsset(value) }).catch(() => undefined)
-    return () => { active = false }
-  }, [profile.name, profile.has_avatar, meta?.imageKind])
-
-  if (asset || meta?.image) return <img className="avatar-fallback bot-avatar bot-avatar-image" src={asset || meta?.image || undefined} alt=""/>
-  return <span className="avatar-fallback bot-avatar bot-avatar-svg" aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }}/>
 }
 
 function Notice({ message, retry }: { message: string; retry: () => void }) {
