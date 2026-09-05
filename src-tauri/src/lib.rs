@@ -161,6 +161,48 @@ fn hermes_trigger_cron(
     )
 }
 
+fn authenticated_put(origin: &str, path: &str, body: serde_json::Value) -> Result<String, String> {
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let token = session_token(&client, origin)?;
+    client
+        .put(format!("{origin}{path}"))
+        .header("X-Hermes-Session-Token", token)
+        .json(&body)
+        .send()
+        .map_err(|error| format!("Hermes request failed: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("Hermes rejected the request: {error}"))?
+        .text()
+        .map_err(|error| format!("Could not read Hermes response: {error}"))
+}
+
+#[tauri::command]
+fn hermes_update_cron_prompt(
+    base_url: String,
+    job_id: String,
+    profile: String,
+    prompt: String,
+) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    let profile_query = if profile.trim().is_empty() {
+        String::new()
+    } else {
+        format!("?profile={}", urlencoding::encode(&profile))
+    };
+    authenticated_put(
+        &origin,
+        &format!(
+            "/api/cron/jobs/{}{}",
+            urlencoding::encode(&job_id),
+            profile_query
+        ),
+        serde_json::json!({ "updates": { "prompt": prompt } }),
+    )
+}
+
 #[tauri::command]
 fn hermes_ws_url(base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
@@ -187,6 +229,7 @@ pub fn run() {
             hermes_transcribe,
             hermes_cron_runs,
             hermes_trigger_cron,
+            hermes_update_cron_prompt,
             hermes_ws_url
         ])
         .run(tauri::generate_context!())

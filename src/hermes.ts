@@ -189,6 +189,11 @@ export async function triggerCronJob(jobId: string, profile = '', baseUrl = loca
   return JSON.parse(raw) as CronJob
 }
 
+export async function updateCronPrompt(jobId: string, prompt: string, profile = '', baseUrl = localHermes): Promise<CronJob> {
+  const raw = await invoke<string>('hermes_update_cron_prompt', { baseUrl, jobId, profile, prompt })
+  return JSON.parse(raw) as CronJob
+}
+
 export async function updateCronJob(jobId: string, action: 'pause' | 'resume' | 'remove', profile?: string, baseUrl = localHermes): Promise<void> {
   const result = await rpcCall<{ ok?: boolean }>('cron.manage', { action, name: jobId, ...(profile ? { profile } : {}) }, baseUrl)
   if (result.ok === false) throw new Error(`Hermes could not ${action} this scheduled task.`)
