@@ -143,6 +143,14 @@ export async function loadProfileDetails(profile: string, baseUrl = localHermes)
   return rpcCall<ProfileDetails>('profiles.describe', { name: profile }, baseUrl)
 }
 
+export async function attachFile(sessionId: string, profile: string, input: { name: string; dataUrl: string; path?: string }, baseUrl = localHermes): Promise<{ name: string; refText: string }> {
+  const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
+  resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
+  const result = await gateway(baseUrl).attachFile(resolved, { name: input.name, data_url: input.dataUrl, path: input.path })
+  if (result.attached !== true || !result.ref_text) throw new Error(`Hermes could not attach “${input.name}”.`)
+  return { name: result.name || input.name, refText: result.ref_text }
+}
+
 export async function setProfileDescription(profile: string, description: string, baseUrl = localHermes): Promise<void> {
   const result = await rpcCall<{ ok?: boolean; applied?: { description?: boolean } }>('profiles.configure', { name: profile, description }, baseUrl)
   if (result.ok === false || result.applied?.description === false) throw new Error('Hermes could not save this Bot’s description.')

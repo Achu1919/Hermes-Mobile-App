@@ -1,13 +1,22 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, BrainCircuit, ChevronDown, Mic, Paperclip, RotateCw, Search, Square, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, BrainCircuit, Check, ChevronDown, FileText, LoaderCircle, Mic, Paperclip, RotateCw, Search, Square, Trash2, X } from 'lucide-react'
+import type { ChangeEvent, DragEvent } from 'react'
 
 import { invoke } from '@tauri-apps/api/core'
-import { loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions } from '../hermes'
+import { attachFile, loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions } from '../hermes'
 import { BotAvatar } from './BotAvatar'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
 import type { ToolActivity } from '../App'
 
 type Timeline = LiveMessage & { local?: boolean }
+type PendingAttachment = {
+  id: string
+  name: string
+  size: number
+  status: 'uploading' | 'ready' | 'error'
+  refText?: string
+  error?: string
+}
 type Props = {
   session: LiveSession
   messages: Timeline[]
@@ -23,7 +32,7 @@ type Props = {
   refresh: () => void
   openProfile: () => void
   onSessionModelChange: (model: string) => void
-  submit: () => void
+  submit: (attachments?: { name: string; refText: string }[]) => Promise<boolean>
   stop: () => void
 }
 
@@ -31,10 +40,22 @@ const reasoningChoices = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', '
 const labelReasoning = (value: string) => value === 'none' ? 'Off' : value === 'xhigh' ? 'XHigh' : value[0].toUpperCase() + value.slice(1)
 const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
 
+const toDataUrl = (file: File): Promise<string> => new Promise((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(String(reader.result || ''))
+  reader.onerror = () => reject(new Error(`Could not read ${file.name}.`))
+  reader.readAsDataURL(file)
+})
+
+const attachmentId = (file: File) => `${file.name}:${file.size}:${file.lastModified}`
+const formatFileSize = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`
+const maxAttachmentBytes = 50 * 1024 * 1024
+
 export function ChatView({ session, messages, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, openProfile, onSessionModelChange, submit, stop }: Props) {
   const threadRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const initializedRef = useRef(false)
   const followingRef = useRef(true)
   const [following, setFollowing] = useState(true)
@@ -51,6 +72,8 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null)
   const [recordSeconds, setRecordSeconds] = useState(0)
   const [transcribing, setTranscribing] = useState(false)
+  const [attachments, setAttachments] = useState<PendingAttachment[]>([])
+  const [draggingFiles, setDraggingFiles] = useState(false)
   const botProfile = profiles.find(profile => profile.name === session.profile)
   const botName = botProfile?.display_name || (session.title && session.title !== 'Bot Chat' ? session.title : titleize(session.profile))
 
@@ -68,6 +91,11 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
     setFollowing(true)
     setUnreadBelow(0)
   }
+
+  useEffect(() => {
+    setAttachments([])
+    setDraggingFiles(false)
+  }, [session.id])
 
   useLayoutEffect(() => {
     initializedRef.current = false
@@ -188,9 +216,50 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
     }
   }
   const stopRecording = () => { recorder?.stop(); setRecorder(null) }
+  const uploadAttachment = async (file: File, id: string) => {
+    try {
+      if (file.size > maxAttachmentBytes) throw new Error(`Files must be 50 MB or smaller (${file.name} is ${formatFileSize(file.size)}).`)
+      const dataUrl = await toDataUrl(file)
+      const uploaded = await attachFile(session.id, session.profile, { name: file.name, dataUrl })
+      setAttachments(items => items.map(item => item.id === id ? { ...item, name: uploaded.name, status: 'ready', refText: uploaded.refText, error: undefined } : item))
+    } catch (reason) {
+      setAttachments(items => items.map(item => item.id === id ? { ...item, status: 'error', error: reason instanceof Error ? reason.message : 'Hermes could not upload this file.' } : item))
+    }
+  }
+  const addFiles = (files: File[]) => {
+    setControlError('')
+    for (const file of files) {
+      const id = attachmentId(file)
+      setAttachments(items => items.some(item => item.id === id) ? items : [...items, { id, name: file.name, size: file.size, status: 'uploading' }])
+      void uploadAttachment(file, id)
+    }
+  }
+  const onFileInput = (event: ChangeEvent<HTMLInputElement>) => {
+    addFiles(Array.from(event.target.files || []))
+    event.target.value = ''
+  }
+  const onDragOver = (event: DragEvent<HTMLElement>) => {
+    if (!event.dataTransfer.types.includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+    setDraggingFiles(true)
+  }
+  const onDrop = (event: DragEvent<HTMLElement>) => {
+    if (!event.dataTransfer.files.length) return
+    event.preventDefault()
+    setDraggingFiles(false)
+    addFiles(Array.from(event.dataTransfer.files))
+  }
+  const submitWithAttachments = async () => {
+    const uploading = attachments.some(item => item.status === 'uploading')
+    if (uploading) { setControlError('Wait for the file upload to finish, then send it to Hermes.'); return }
+    const ready = attachments.filter((item): item is PendingAttachment & { refText: string } => item.status === 'ready' && Boolean(item.refText))
+    if (!draft.trim() && !ready.length) return
+    if (await submit(ready.map(item => ({ name: item.name, refText: item.refText })))) setAttachments([])
+  }
   const editMessage = (text: string) => { setDraft(text); requestAnimationFrame(() => textareaRef.current?.focus()) }
 
-  return <main className="app chat-shell">
+  return <main className="app chat-shell" onDragOver={onDragOver} onDrop={onDrop} onDragLeave={() => setDraggingFiles(false)}>
     <header className="chat-header">
       <button className="round-control" onClick={back} aria-label="Back"><ArrowDown size={18} className="back-chevron"/></button>
       <div className="chat-title"><button className="chat-identity-button" onClick={openProfile} aria-label={`Open ${botName} settings`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="header"/><span><b>{botName}</b><small>{botName} · {sending ? 'Working' : model || 'Hermes default'}</small></span></button></div>
@@ -221,15 +290,18 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
     {reasoningMenu && <section className="reasoning-popover"><small className="popover-label">Reasoning effort</small>{reasoningChoices.map(item => <button className={item === reasoning ? 'selected' : ''} key={item} onClick={() => void chooseReasoning(item)}><span>{labelReasoning(item)}</span>{item === reasoning && <span>✓</span>}</button>)}</section>}
 
     <footer className="chat-dock">
-      {recorder ? <div className="recording-composer"><button onClick={stopRecording}><X size={18}/></button><span><i/>0:{String(recordSeconds).padStart(2, '0')}</span><div className="voice-bars">▂▅▃▇▂▆▃▅▂▇</div><button className="composer-send" onClick={stopRecording}><ArrowUp size={16}/></button></div> : <div className="ai-composer">
-        <textarea ref={textareaRef} value={draft} disabled={sending || transcribing} rows={1} placeholder={transcribing ? 'Transcribing…' : 'Ask anything…  /commands'} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit() } }}/>
+      {recorder ? <div className="recording-composer"><button onClick={stopRecording}><X size={18}/></button><span><i/>0:{String(recordSeconds).padStart(2, '0')}</span><div className="voice-bars">▂▅▃▇▂▆▃▅▂▇</div><button className="composer-send" onClick={stopRecording}><ArrowUp size={16}/></button></div> : <div className={`ai-composer ${draggingFiles ? 'file-drop-active' : ''}`}>
+        {draggingFiles && <div className="file-drop-hint"><Paperclip size={15}/><span>Drop files to send to Hermes</span></div>}
+        {!!attachments.length && <div className="attachment-list" aria-label="Attached files">{attachments.map(item => <div className={`attachment-chip ${item.status}`} key={item.id}><FileText size={15}/><span><b>{item.name}</b><small>{item.error || (item.status === 'uploading' ? 'Uploading to Hermes…' : formatFileSize(item.size))}</small></span>{item.status === 'uploading' ? <LoaderCircle className="attachment-spinner" size={14}/> : item.status === 'ready' ? <Check size={14}/> : <span className="attachment-failed">!</span>}<button type="button" onClick={() => setAttachments(items => items.filter(current => current.id !== item.id))} aria-label={`Remove ${item.name}`}><Trash2 size={13}/></button></div>)}</div>}
+        <textarea ref={textareaRef} value={draft} disabled={sending || transcribing} rows={1} placeholder={transcribing ? 'Transcribing…' : 'Ask anything…  /commands'} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submitWithAttachments() } }}/>
         <div className="composer-toolbar">
-          <button className="composer-icon" disabled title="Multi-file attachment transport is next"><Paperclip size={17}/></button>
+          <input ref={fileInputRef} className="attachment-input" type="file" multiple onChange={onFileInput} aria-label="Choose files to attach"/>
+          <button className={`composer-icon ${attachments.length ? 'attachment-active' : ''}`} disabled={sending || transcribing} title="Attach files" onClick={() => fileInputRef.current?.click()} aria-label="Attach files"><Paperclip size={17}/></button>
           <button className="composer-selector" onClick={() => { setModelMenu(value => !value); setReasoningMenu(false) }}><span>{model || 'Default model'}</span><ChevronDown size={13}/></button>
           <button className="composer-selector effort" onClick={() => { setReasoningMenu(value => !value); setModelMenu(false) }}><BrainCircuit size={14}/><span>{labelReasoning(reasoning)}</span><ChevronDown size={13}/></button>
           <span className="toolbar-spacer"/>
           {!draft && !sending && <button className="composer-icon" disabled={transcribing} onClick={() => void startRecording()} aria-label="Record voice"><Mic size={17}/></button>}
-          {sending ? <button className="composer-send stop" onClick={stop} aria-label="Stop Hermes"><Square size={12} fill="currentColor"/></button> : <button className="composer-send" disabled={!draft.trim()} onClick={submit} aria-label="Send message"><ArrowUp size={17}/></button>}
+          {sending ? <button className="composer-send stop" onClick={stop} aria-label="Stop Hermes"><Square size={12} fill="currentColor"/></button> : <button className="composer-send" disabled={!draft.trim() && !attachments.some(item => item.status === 'ready')} onClick={() => void submitWithAttachments()} aria-label="Send message"><ArrowUp size={17}/></button>}
         </div>
       </div>}
     </footer>

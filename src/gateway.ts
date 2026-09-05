@@ -224,6 +224,15 @@ export class HermesGatewayClient {
     }
   }
 
+  attachFile(sessionId: string, input: { name: string; data_url: string; path?: string }) {
+    return this.call<{ attached?: boolean; ref_text?: string; name?: string }>('file.attach', {
+      session_id: sessionId,
+      name: input.name,
+      data_url: input.data_url,
+      ...(input.path ? { path: input.path } : {}),
+    }, 120_000)
+  }
+
   interruptSession(sessionId: string) {
     return this.call('session.interrupt', { session_id: sessionId })
   }

@@ -6,6 +6,7 @@ import { BotAvatar } from './components/BotAvatar'
 import { BotAppearancePicker } from './components/BotAppearancePicker'
 import { BotProfileSheet } from './components/BotProfileSheet'
 import { TasksView } from './components/TasksView'
+import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
 import { buildBotRows } from './live-model'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
@@ -112,18 +113,20 @@ export default function App() {
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.') }
   }
 
-  const submit = async () => {
-    if (!selected || !draft.trim() || sending) return
+  const submit = async (attachmentRefs: { name: string; refText: string }[] = []): Promise<boolean> => {
+    if (!selected || sending) return false
     const text = draft.trim()
+    if (!text && !attachmentRefs.length) return false
+    const prompt = buildAttachmentPrompt(text, attachmentRefs)
     let completionUsage: LiveUsage | undefined
     setDraft('')
     setError('')
     setSending(true)
     setStreaming('')
     setToolActivities([])
-    setMessages(items => [...items, { id: -Date.now(), role: 'user', content: text }])
+    setMessages(items => [...items, { id: -Date.now(), role: 'user', content: attachmentSummary(text, attachmentRefs) }])
     try {
-      await connectAndSubmit(selected.id, selected.profile, text, (type, payload) => {
+      await connectAndSubmit(selected.id, selected.profile, prompt, (type, payload) => {
         if (type === 'message.delta') setStreaming(current => current + String(payload.text || ''))
         if (type === 'message.complete') {
           setStreaming(String(payload.text || ''))
@@ -141,8 +144,10 @@ export default function App() {
       })
       await openSession(selected, completionUsage)
       await refresh()
+      return true
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not send to Hermes.')
+      return false
     } finally {
       setSending(false)
       setStreaming('')
@@ -184,7 +189,7 @@ export default function App() {
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
-  if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={() => void submit()} stop={() => void stop()}/>
+  if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
 
   return <main className="app roster-shell">
