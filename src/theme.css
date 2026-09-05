@@ -44,3 +44,5 @@
 [data-theme='light'] .tasks-running{color:#255bc2;border-color:rgba(37,91,194,.22);background:rgba(37,91,194,.07)}
 [data-theme='light'] .task-title em.scheduled{color:#147a51;background:rgba(20,122,81,.08)}
 [data-theme='light'] .task-title em.running{color:#255bc2;background:rgba(37,91,194,.08)}
+[data-theme='light'] .capability-entry{border-color:rgba(184,126,24,.42);background:linear-gradient(110deg,rgba(218,157,59,.1),#fff 62%)}
+[data-theme='light'] .capability-entry:hover{border-color:rgba(170,112,16,.68);background:linear-gradient(110deg,rgba(218,157,59,.16),#fff 62%)}
