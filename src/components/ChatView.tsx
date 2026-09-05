@@ -1,12 +1,13 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDown, ArrowUp, BrainCircuit, Check, ChevronDown, FileText, LoaderCircle, Mic, Paperclip, RotateCw, Search, Square, Trash2, X } from 'lucide-react'
-import type { ChangeEvent, DragEvent } from 'react'
+import { ArrowDown, ArrowUp, BrainCircuit, Check, ChevronDown, FileText, LoaderCircle, Mic, Paperclip, RotateCw, Search, Sparkles, Square, Trash2, X } from 'lucide-react'
+import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react'
 
 import { invoke } from '@tauri-apps/api/core'
-import { attachFile, loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions } from '../hermes'
+import { attachFile, completeSlash, loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions, type SlashCompletion } from '../hermes'
 import { BotAvatar } from './BotAvatar'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
 import type { ToolActivity } from '../App'
+import { applySlashCompletion } from '../slash-routing'
 
 type Timeline = LiveMessage & { local?: boolean }
 type PendingAttachment = {
@@ -74,10 +75,18 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   const [transcribing, setTranscribing] = useState(false)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [draggingFiles, setDraggingFiles] = useState(false)
+  const [slashItems, setSlashItems] = useState<SlashCompletion[]>([])
+  const [slashReplaceFrom, setSlashReplaceFrom] = useState(1)
+  const [slashIndex, setSlashIndex] = useState(0)
+  const [slashLoading, setSlashLoading] = useState(false)
   const botProfile = profiles.find(profile => profile.name === session.profile)
   const botName = botProfile?.display_name || (session.title && session.title !== 'Bot Chat' ? session.title : titleize(session.profile))
 
   const mentionOpen = /@[\w-]*$/.test(draft)
+  const slashMatch = /(?:^|\s)(\/[^\s]*)$/.exec(draft)
+  const slashText = slashMatch?.[1] || ''
+  const slashStart = slashMatch ? slashMatch.index + slashMatch[0].length - slashText.length : -1
+  const slashOpen = Boolean(slashText)
   const allModels = useMemo(() => (modelOptions.providers || []).flatMap(item => (item.featured_models?.length ? item.featured_models : item.models || []).map(name => ({ name, provider: item.slug, providerName: item.name, authenticated: item.authenticated !== false }))).filter((item, index, rows) => rows.findIndex(other => other.provider === item.provider && other.name === item.name) === index), [modelOptions])
   const filteredModels = useMemo(() => allModels.filter(item => `${item.name} ${item.providerName}`.toLowerCase().includes(modelSearch.toLowerCase())), [allModels, modelSearch])
   const visibleError = error || controlError
@@ -138,6 +147,30 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
       setProvider(options.provider || '')
     }).catch(() => setModelOptions({}))
   }, [session.profile])
+
+  useEffect(() => {
+    let cancelled = false
+    if (!slashText) {
+      setSlashItems([])
+      setSlashLoading(false)
+      setSlashIndex(0)
+      return () => { cancelled = true }
+    }
+    setSlashLoading(true)
+    setSlashIndex(0)
+    const timer = window.setTimeout(() => {
+      void completeSlash(session.id, session.profile, slashText).then(result => {
+        if (cancelled) return
+        setSlashItems(Array.isArray(result.items) ? result.items : [])
+        setSlashReplaceFrom(typeof result.replace_from === 'number' ? result.replace_from : 1)
+      }).catch(() => {
+        if (!cancelled) setSlashItems([])
+      }).finally(() => {
+        if (!cancelled) setSlashLoading(false)
+      })
+    }, 90)
+    return () => { cancelled = true; window.clearTimeout(timer) }
+  }, [session.id, session.profile, slashText])
 
   useEffect(() => {
     const field = textareaRef.current
@@ -215,6 +248,28 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
       }
     }
   }
+  const chooseSlash = (item: SlashCompletion) => {
+    if (slashStart < 0) return
+    setDraft(applySlashCompletion(draft, slashStart, slashReplaceFrom, item.text))
+    setSlashItems([])
+    requestAnimationFrame(() => textareaRef.current?.focus())
+  }
+  const handleComposerKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (slashOpen && slashItems.length && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      event.preventDefault()
+      setSlashIndex(index => event.key === 'ArrowDown' ? (index + 1) % slashItems.length : (index - 1 + slashItems.length) % slashItems.length)
+      return
+    }
+    if (slashOpen && slashItems.length && (event.key === 'Enter' || event.key === 'Tab')) {
+      event.preventDefault()
+      chooseSlash(slashItems[slashIndex] || slashItems[0])
+      return
+    }
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault()
+      void submitWithAttachments()
+    }
+  }
   const stopRecording = () => { recorder?.stop(); setRecorder(null) }
   const uploadAttachment = async (file: File, id: string) => {
     try {
@@ -260,6 +315,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   const editMessage = (text: string) => { setDraft(text); requestAnimationFrame(() => textareaRef.current?.focus()) }
 
   return <main className="app chat-shell" onDragOver={onDragOver} onDrop={onDrop} onDragLeave={() => setDraggingFiles(false)}>
+    {draggingFiles && <div className="file-drop-overlay" aria-live="polite"><div><Paperclip size={24}/><b>Drop files to upload to Hermes</b><span>Documents stay on the host for Hermes to read</span></div></div>}
     <header className="chat-header">
       <button className="round-control" onClick={back} aria-label="Back"><ArrowDown size={18} className="back-chevron"/></button>
       <div className="chat-title"><button className="chat-identity-button" onClick={openProfile} aria-label={`Open ${botName} settings`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="header"/><span><b>{botName}</b><small>{botName} · {sending ? 'Working' : model || 'Hermes default'}</small></span></button></div>
@@ -279,6 +335,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
 
     {!following && <button className="latest-button" onClick={() => scrollToLatest()}><ArrowDown size={15}/><span>Latest{unreadBelow ? ` · ${unreadBelow}` : ''}</span></button>}
 
+    {slashOpen && (slashItems.length || slashLoading) && <section className="slash-popover" aria-label="Hermes skills and commands" role="listbox"><div className="slash-popover-head"><Sparkles size={14}/><span>{slashLoading ? 'Loading Hermes skills…' : 'Hermes skills & commands'}</span></div>{slashItems.slice(0, 12).map((item, index) => <button className={`${index === slashIndex ? 'selected' : ''} ${item.kind === 'skill' ? 'skill' : 'command'}`} key={`${item.text}:${index}`} type="button" role="option" aria-selected={index === slashIndex} onMouseDown={event => event.preventDefault()} onClick={() => chooseSlash(item)}><span className="slash-item-icon">{item.kind === 'skill' ? <Sparkles size={14}/> : '/'}</span><span><b>{item.display || item.text}</b><small>{item.meta || (item.kind === 'skill' ? 'Installed Hermes skill' : 'Hermes command')}</small></span></button>)}</section>}
     {mentionOpen && <div className="mention-popover">{mentions.slice(0, 6).map(item => <button key={item.name} onClick={() => setDraft(draft.replace(/@[\w-]*$/, `@${item.name} `))}><BotAvatar profile={item} fallbackName={item.name} variant="mention"/><span><b>{item.display_name || titleize(item.name)}</b><small>@{item.name}</small></span></button>)}</div>}
 
     {(modelMenu || reasoningMenu) && <button className="popover-scrim" aria-label="Close menu" onClick={() => { setModelMenu(false); setReasoningMenu(false) }}/>} 
@@ -293,7 +350,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
       {recorder ? <div className="recording-composer"><button onClick={stopRecording}><X size={18}/></button><span><i/>0:{String(recordSeconds).padStart(2, '0')}</span><div className="voice-bars">▂▅▃▇▂▆▃▅▂▇</div><button className="composer-send" onClick={stopRecording}><ArrowUp size={16}/></button></div> : <div className={`ai-composer ${draggingFiles ? 'file-drop-active' : ''}`}>
         {draggingFiles && <div className="file-drop-hint"><Paperclip size={15}/><span>Drop files to send to Hermes</span></div>}
         {!!attachments.length && <div className="attachment-list" aria-label="Attached files">{attachments.map(item => <div className={`attachment-chip ${item.status}`} key={item.id}><FileText size={15}/><span><b>{item.name}</b><small>{item.error || (item.status === 'uploading' ? 'Uploading to Hermes…' : formatFileSize(item.size))}</small></span>{item.status === 'uploading' ? <LoaderCircle className="attachment-spinner" size={14}/> : item.status === 'ready' ? <Check size={14}/> : <span className="attachment-failed">!</span>}<button type="button" onClick={() => setAttachments(items => items.filter(current => current.id !== item.id))} aria-label={`Remove ${item.name}`}><Trash2 size={13}/></button></div>)}</div>}
-        <textarea ref={textareaRef} value={draft} disabled={sending || transcribing} rows={1} placeholder={transcribing ? 'Transcribing…' : 'Ask anything…  /commands'} onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void submitWithAttachments() } }}/>
+        <textarea ref={textareaRef} value={draft} disabled={sending || transcribing} rows={1} placeholder={transcribing ? 'Transcribing…' : 'Ask anything…  /commands'} onChange={event => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown}/>
         <div className="composer-toolbar">
           <input ref={fileInputRef} className="attachment-input" type="file" multiple onChange={onFileInput} aria-label="Choose files to attach"/>
           <button className={`composer-icon ${attachments.length ? 'attachment-active' : ''}`} disabled={sending || transcribing} title="Attach files" onClick={() => fileInputRef.current?.click()} aria-label="Attach files"><Paperclip size={17}/></button>

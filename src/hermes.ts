@@ -9,6 +9,8 @@ export type LiveUsage = { model?: string; input?: number; output?: number; reaso
 export type LiveMessage = { id: number; role: 'user' | 'assistant' | 'tool' | 'system'; content: string; tool_name?: string | null; tool_status?: 'running' | 'done' | 'failed'; duration_s?: number; reasoning?: string | null; timestamp?: number; token_count?: number | null; usage?: LiveUsage }
 export type ModelProvider = { name: string; slug: string; models?: string[]; featured_models?: string[]; authenticated?: boolean }
 export type ModelOptions = { model?: string; provider?: string; providers?: ModelProvider[] }
+export type SlashCompletion = { text: string; display?: string; meta?: string; kind?: 'skill' | 'command' }
+export type SlashCompletionResult = { items?: SlashCompletion[]; replace_from?: number }
 export type Capability = { name: string; description?: string; label?: string; tool_count?: number; enabled: boolean }
 export type ProfileDetails = {
   name: string
@@ -149,6 +151,12 @@ export async function attachFile(sessionId: string, profile: string, input: { na
   const result = await gateway(baseUrl).attachFile(resolved, { name: input.name, data_url: input.dataUrl, path: input.path })
   if (result.attached !== true || !result.ref_text) throw new Error(`Hermes could not attach “${input.name}”.`)
   return { name: result.name || input.name, refText: result.ref_text }
+}
+
+export async function completeSlash(sessionId: string, profile: string, text: string, baseUrl = localHermes): Promise<SlashCompletionResult> {
+  const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
+  resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
+  return gateway(baseUrl).call<SlashCompletionResult>('complete.slash', { session_id: resolved, profile, text })
 }
 
 export async function setProfileDescription(profile: string, description: string, baseUrl = localHermes): Promise<void> {
