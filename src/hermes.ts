@@ -9,14 +9,34 @@ export type LiveUsage = { model?: string; input?: number; output?: number; reaso
 export type LiveMessage = { id: number; role: 'user' | 'assistant' | 'tool' | 'system'; content: string; tool_name?: string | null; tool_status?: 'running' | 'done' | 'failed'; duration_s?: number; reasoning?: string | null; timestamp?: number; token_count?: number | null; usage?: LiveUsage }
 export type ModelProvider = { name: string; slug: string; models?: string[]; featured_models?: string[]; authenticated?: boolean }
 export type ModelOptions = { model?: string; provider?: string; providers?: ModelProvider[] }
+export type Capability = { name: string; description?: string; label?: string; tool_count?: number; enabled: boolean }
 export type ProfileDetails = {
   name: string
   description?: string
   soul?: string
   model?: { provider?: string; default?: string }
-  skills?: Array<{ name: string; enabled: boolean }>
-  toolsets?: Array<{ name: string; label?: string; description?: string; tool_count?: number; enabled: boolean }>
+  skills?: Capability[]
+  toolsets?: Capability[]
 }
+export type SkillSearchResult = { name: string; description?: string }
+export type CronJob = {
+  job_id: string
+  name?: string
+  prompt?: string
+  prompt_preview?: string
+  schedule?: string
+  enabled?: boolean
+  state?: string
+  next_run_at?: string
+  last_run_at?: string
+  last_status?: string
+  last_error?: string
+  deliver?: string
+  model?: string
+  provider?: string
+  profile?: string
+}
+export type CronList = { jobs?: CronJob[]; scoped?: string }
 type Snapshot = { sessions: { sessions: LiveSession[] } }
 
 export function buildCanonicalSessionParams(profile: string): Record<string, unknown> {
@@ -117,6 +137,49 @@ export async function loadProfileAvatar(profile: string, baseUrl = localHermes):
 
 export async function loadProfileDetails(profile: string, baseUrl = localHermes): Promise<ProfileDetails> {
   return rpcCall<ProfileDetails>('profiles.describe', { name: profile }, baseUrl)
+}
+
+export async function setProfileDescription(profile: string, description: string, baseUrl = localHermes): Promise<void> {
+  const result = await rpcCall<{ ok?: boolean; applied?: { description?: boolean } }>('profiles.configure', { name: profile, description }, baseUrl)
+  if (result.ok === false || result.applied?.description === false) throw new Error('Hermes could not save this Bot’s description.')
+}
+
+export function capabilityUpdatePayload(skills: Capability[], toolsets: Capability[]): { disabled_skills: string[]; enabled_toolsets: string[] } {
+  const enabledToolsets = toolsets.filter(item => item.enabled).map(item => item.name)
+  if (toolsets.length && enabledToolsets.length === 0) throw new Error('Select at least one toolset. Hermes uses an empty selection to restore its default tools.')
+  return {
+    disabled_skills: skills.filter(item => !item.enabled).map(item => item.name),
+    enabled_toolsets: enabledToolsets.length === toolsets.length ? [] : enabledToolsets,
+  }
+}
+
+export async function setProfileCapabilities(profile: string, skills: Capability[], toolsets: Capability[], baseUrl = localHermes): Promise<void> {
+  const payload = capabilityUpdatePayload(skills, toolsets)
+  const result = await rpcCall<{ ok?: boolean; applied?: { skills?: boolean; toolsets?: boolean } }>('profiles.configure', {
+    name: profile,
+    ...payload,
+  }, baseUrl)
+  if (result.ok === false || result.applied?.skills === false || result.applied?.toolsets === false) throw new Error('Hermes could not update this Bot’s capabilities.')
+}
+
+export async function searchHubSkills(profile: string, query: string, baseUrl = localHermes): Promise<SkillSearchResult[]> {
+  const result = await rpcCall<{ results?: SkillSearchResult[] }>('skills.manage', { action: 'search', profile, query }, baseUrl)
+  return Array.isArray(result.results) ? result.results : []
+}
+
+export async function installHubSkill(profile: string, name: string, baseUrl = localHermes): Promise<void> {
+  const result = await rpcCall<{ installed?: boolean }>('skills.manage', { action: 'install', profile, query: name }, baseUrl)
+  if (result.installed !== true) throw new Error(`Hermes could not install “${name}”.`)
+}
+
+export async function loadCronJobs(profile?: string, baseUrl = localHermes): Promise<CronJob[]> {
+  const result = await rpcCall<CronList>('cron.manage', { action: 'list', include_disabled: true, ...(profile ? { profile } : {}) }, baseUrl)
+  return Array.isArray(result.jobs) ? result.jobs.map(job => ({ ...job, profile: result.scoped || profile || job.profile })) : []
+}
+
+export async function updateCronJob(jobId: string, action: 'pause' | 'resume' | 'remove', profile?: string, baseUrl = localHermes): Promise<void> {
+  const result = await rpcCall<{ ok?: boolean }>('cron.manage', { action, name: jobId, ...(profile ? { profile } : {}) }, baseUrl)
+  if (result.ok === false) throw new Error(`Hermes could not ${action} this scheduled task.`)
 }
 
 export async function setProfileSoul(profile: string, soul: string, baseUrl = localHermes): Promise<void> {

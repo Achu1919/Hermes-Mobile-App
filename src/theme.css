@@ -36,3 +36,11 @@
 [data-theme='light'] .appearance-grid button:hover,[data-theme='light'] .appearance-grid button.selected{border-color:#5b63d8;background:rgba(91,99,216,.1);color:#263242}
 [data-theme='light'] .appearance-actions button{background:#fff;border-color:rgba(20,35,60,.14);color:#394453}
 [data-theme='light'] .appearance-actions span,[data-theme='light'] .appearance-picker p{color:#687385}
+[data-theme='light'] .capability-group,[data-theme='light'] .capability-search{background:#fff;border-color:rgba(20,35,60,.14)}
+[data-theme='light'] .capability-save,[data-theme='light'] .capability-action,[data-theme='light'] .profile-about-actions .save{color:#313b92}
+[data-theme='light'] .capability-toggle.on{color:#147a51;border-color:rgba(20,122,81,.28);background:rgba(20,122,81,.09)}
+[data-theme='light'] .capability-toggle.on i{background:#147a51}
+[data-theme='light'] .capability-row em{color:#147a51}
+[data-theme='light'] .tasks-running{color:#255bc2;border-color:rgba(37,91,194,.22);background:rgba(37,91,194,.07)}
+[data-theme='light'] .task-title em.scheduled{color:#147a51;background:rgba(20,122,81,.08)}
+[data-theme='light'] .task-title em.running{color:#255bc2;background:rgba(37,91,194,.08)}

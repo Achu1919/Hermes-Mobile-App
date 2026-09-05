@@ -8,6 +8,7 @@ import './activity.css'
 import './mobile-overrides.css'
 import './avatar.css'
 import './profile-sheet.css'
+import './management.css'
 import './appearance-picker.css'
 import './theme.css'
 
