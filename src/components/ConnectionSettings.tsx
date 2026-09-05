@@ -1,0 +1,131 @@
+import { useState } from 'react'
+import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
+
+import { probeHermesGateway } from '../hermes'
+
+const HermesMobileLogo = '/HermesMobileLogo.png'
+
+type Theme = 'dark' | 'light' | 'grey' | 'aurora'
+type Page = 'root' | 'pairing' | 'about'
+
+type Props = {
+  profiles: number
+  sessions: number
+  theme: Theme
+  setTheme: (theme: Theme) => void
+  close: () => void
+  refresh: () => void
+}
+
+const themes: Array<{ id: Theme; label: string; description: string }> = [
+  { id: 'dark', label: 'OLED dark', description: 'Deep black with violet accents' },
+  { id: 'light', label: 'Light', description: 'Cool, layered blue-gray surfaces' },
+  { id: 'grey', label: 'Graphite', description: 'Neutral grey with cool surfaces' },
+  { id: 'aurora', label: 'Aurora', description: 'Midnight navy with teal-violet glow' },
+]
+
+const external = (href: string) => ({ href, target: '_blank', rel: 'noreferrer' })
+
+function Header({ title, subtitle, back }: { title: string; subtitle: string; back: () => void }) {
+  return <header className="panel-head connection-head">
+    <button className="back-button" onClick={back} aria-label="Back"><ArrowLeft size={19}/></button>
+    <div><h2>{title}</h2><p>{subtitle}</p></div>
+  </header>
+}
+
+function AboutHermesMobile({ back }: { back: () => void }) {
+  return <main className="app panel about-screen">
+    <Header title="About Hermes Mobile" subtitle="A companion for Hermes Desktop" back={back}/>
+    <section className="about-hero">
+      <div className="about-logo-card"><img src={HermesMobileLogo} alt="Hermes Mobile logo"/></div>
+      <h1>Hermes Mobile</h1>
+      <p>Version 0.1.0</p>
+      <span>Control your Hermes workspace from wherever you are.</span>
+    </section>
+    <section className="about-story">
+      <p>I fell in love with Hermes, but couldn’t find an Android client that let me control my Bots the way I wanted from my phone. So I built Hermes Mobile: a polished, host-first companion for the Hermes Desktop runtime.</p>
+      <p>Your Windows PC remains the authority for your agents, credentials, approvals, tools, sessions, and files. Hermes Mobile is the secure control surface in your pocket. Hope you enjoy it.</p>
+    </section>
+    <section className="about-links" aria-label="Hermes Mobile and Hermes links">
+      <p>HERMES MOBILE</p>
+      <a {...external('https://github.com/CodeUpdaterBot/Hermes-Mobile-App')}><GitBranch size={18}/><span><b>Hermes Mobile on GitHub</b><small>Source, releases, and feedback</small></span><ExternalLink size={16}/></a>
+      <p>HERMES</p>
+      <a {...external('https://hermes-agent.nousresearch.com/')}><Globe2 size={18}/><span><b>Hermes Agent</b><small>Official website</small></span><ExternalLink size={16}/></a>
+      <a {...external('https://hermes-agent.nousresearch.com/docs/')}><Globe2 size={18}/><span><b>Documentation</b><small>Guides for hosts, gateways, and Bots</small></span><ExternalLink size={16}/></a>
+      <a {...external('https://github.com/NousResearch/hermes-agent')}><GitBranch size={18}/><span><b>Hermes Agent on GitHub</b><small>Open-source agent runtime</small></span><ExternalLink size={16}/></a>
+      <a {...external('https://discord.gg/NousResearch')}><Heart size={18}/><span><b>Nous Research Discord</b><small>Community and support</small></span><ExternalLink size={16}/></a>
+    </section>
+    <p className="about-footer">Built independently for the Hermes community. Hermes Agent is open source under the MIT License.</p>
+  </main>
+}
+
+function PairingSettings({ back }: { back: () => void }) {
+  const [gatewayUrl, setGatewayUrl] = useState('')
+  const [checking, setChecking] = useState(false)
+  const [result, setResult] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  const [copied, setCopied] = useState(false)
+  const testGateway = async () => {
+    const value = gatewayUrl.trim().replace(/\/$/, '')
+    if (!value) { setResult({ tone: 'error', text: 'Enter your Windows PC’s Tailscale or HTTPS gateway URL first.' }); return }
+    setChecking(true); setResult(null)
+    try {
+      const status = await probeHermesGateway(value)
+      const host = new URL(value).hostname.toLowerCase()
+      const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+      if (!loopback && status.auth_required !== true) {
+        setResult({ tone: 'error', text: 'This remote gateway is reachable but does not require authentication. Secure remote pairing requires an authenticated Hermes gateway.' })
+        return
+      }
+      const pkce = status.auth_flows?.includes('native_pkce') ? ' Native phone sign-in is available.' : ''
+      setResult({ tone: 'success', text: `Hermes ${status.version || 'gateway'} is reachable.${status.auth_required ? ' Authentication is required.' : ' Local development gateway detected.'}${pkce}` })
+    } catch (error) {
+      setResult({ tone: 'error', text: error instanceof Error ? error.message : 'Could not reach this Hermes gateway.' })
+    } finally { setChecking(false) }
+  }
+  const copyChecklist = async () => {
+    try {
+      await navigator.clipboard.writeText('Hermes Mobile Android pairing\n1. Join the Windows PC and Android phone to the same Tailscale tailnet.\n2. Start an authenticated Hermes gateway on the Windows PC.\n3. On Android, enter the PC’s Tailscale HTTPS/HTTP gateway URL — never 127.0.0.1.\n4. Verify reachability, then authenticate with the gateway’s supported session token or OAuth flow.\n5. Keep port 9119 private; do not expose it directly to the public internet.')
+      setCopied(true); window.setTimeout(() => setCopied(false), 1800)
+    } catch { setResult({ tone: 'error', text: 'Clipboard access is unavailable. You can still follow the checklist below.' }) }
+  }
+  return <main className="app panel pairing-screen">
+    <Header title="Security & pairing" subtitle="Private access for your mobile device" back={back}/>
+    <section className="pairing-hero">
+      <div className="pairing-icon"><ShieldCheck size={28}/></div>
+      <div><span>RECOMMENDED</span><h3>Pair over Tailscale</h3><p>Keep your Hermes gateway private. Your phone joins your Tailnet instead of exposing port 9119 to the public internet.</p></div>
+    </section>
+    <section className="pairing-card">
+      <div className="pairing-card-title"><Wifi size={18}/><div><b>Verify your Windows gateway</b><small>Checks the real Hermes gateway status before any sign-in.</small></div></div>
+      <label className="pairing-field"><span>GATEWAY URL</span><input value={gatewayUrl} onChange={event => setGatewayUrl(event.target.value)} placeholder="https://your-pc.tailnet.ts.net:9119" inputMode="url" autoCapitalize="none" autoCorrect="off"/></label>
+      <button className="primary wide pairing-test" disabled={checking} onClick={() => void testGateway()}>{checking ? 'Checking gateway…' : 'Test gateway'}</button>
+      {result && <p className={`pairing-result ${result.tone}`}>{result.tone === 'success' ? <CheckCircle2 size={16}/> : <LockKeyhole size={16}/>}<span>{result.text}</span></p>}
+      <p className="pairing-note">Never enter <code>127.0.0.1</code> or <code>localhost</code> on your phone—those point back to the phone itself.</p>
+    </section>
+    <section className="pairing-steps">
+      <p>PAIR AN ANDROID PHONE</p>
+      <ol>
+        <li><Smartphone size={17}/><span><b>Join the same Tailnet</b><small>Install Tailscale on Windows and Android, then sign into the same account.</small></span></li>
+        <li><Wifi size={17}/><span><b>Run a reachable Hermes gateway</b><small>Use a Tailscale hostname or authenticated HTTPS URL. Keep direct public port exposure off.</small></span></li>
+        <li><LockKeyhole size={17}/><span><b>Authenticate on the phone</b><small>Use Hermes’ supported gateway session-token or OAuth flow. Credentials belong in Android Keystore or iOS Keychain, never in chat or a URL.</small></span></li>
+      </ol>
+    </section>
+    <section className="pairing-actions">
+      <button className="secondary" onClick={() => void copyChecklist()}>{copied ? <CheckCircle2 size={16}/> : <Copy size={16}/>} {copied ? 'Setup copied' : 'Copy setup checklist'}</button>
+      <a {...external('https://hermes-agent.nousresearch.com/docs/user-guide/multi-connection-desktop')}><ExternalLink size={16}/> Gateway connection guide</a>
+    </section>
+    <p className="pairing-disclosure">This desktop build validates gateway reachability without collecting a credential. The mobile sign-in layer must use OS-backed secure storage and Hermes’ supported token/OAuth flow before it changes the active agent connection.</p>
+  </main>
+}
+
+export function ConnectionSettings({ profiles, sessions, theme, setTheme, close, refresh }: Props) {
+  const [page, setPage] = useState<Page>('root')
+  const [showThemes, setShowThemes] = useState(false)
+  if (page === 'about') return <AboutHermesMobile back={() => setPage('root')}/>
+  if (page === 'pairing') return <PairingSettings back={() => setPage('root')}/>
+  return <main className="app panel connection-screen">
+    <Header title="Connection" subtitle="Hermes Desktop host" back={close}/>
+    <section className="connection-card"><span className="status-pill">● Connected</span><h3>This Windows PC</h3><code>127.0.0.1:9119</code><div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div><button className="primary wide" onClick={refresh}>Sync now</button></section>
+    <section className="menu-list"><button>Notifications <span>›</span></button><button onClick={() => setShowThemes(value => !value)}>Appearance <span>{themes.find(item => item.id === theme)?.label} ›</span></button>{showThemes && <div className="theme-picker">{themes.map(item => <button className={item.id === theme ? 'selected' : ''} onClick={() => setTheme(item.id)} key={item.id}><span className={`theme-swatch theme-${item.id}`}/><span><b>{item.label}</b><small>{item.description}</small></span><i>{item.id === theme ? '✓' : ''}</i></button>)}</div>}<button onClick={() => setPage('pairing')}>Security & pairing <span>›</span></button><button onClick={() => setPage('about')}>About Hermes Mobile <span>0.1.0 ›</span></button></section>
+    <p className="fine">The host owns models, credentials, tools, memory, skills, and approvals. This client is the control surface.</p>
+  </main>
+}

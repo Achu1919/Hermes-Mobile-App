@@ -44,6 +44,25 @@ fn authenticated_get(origin: &str, path: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn hermes_connection_probe(base_url: String) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    if !(origin.starts_with("https://") || origin.starts_with("http://")) {
+        return Err("Enter a full http:// or https:// Hermes gateway URL".to_string());
+    }
+    reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()
+        .map_err(|error| error.to_string())?
+        .get(format!("{origin}/api/status"))
+        .send()
+        .map_err(|error| format!("Could not reach this Hermes gateway: {error}"))?
+        .error_for_status()
+        .map_err(|error| format!("Hermes gateway health check failed: {error}"))?
+        .text()
+        .map_err(|error| format!("Could not read Hermes gateway health: {error}"))
+}
+
+#[tauri::command]
 fn hermes_snapshot(base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
     // Sessions are a REST projection. Bot roster rows are intentionally NOT
@@ -299,6 +318,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
+            hermes_connection_probe,
             hermes_snapshot,
             hermes_model_options,
             hermes_session_messages,

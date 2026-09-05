@@ -6,6 +6,7 @@ import { BotAvatar } from './components/BotAvatar'
 import { BotAppearancePicker } from './components/BotAppearancePicker'
 import { BotProfileSheet } from './components/BotProfileSheet'
 import { TasksView } from './components/TasksView'
+import { ConnectionSettings } from './components/ConnectionSettings'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
 import { buildBotRows } from './live-model'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
@@ -252,7 +253,7 @@ function Notice({ message, retry }: { message: string; retry: () => void }) {
 }
 function Skeleton() { return <div className="skeletons">{[1, 2, 3, 4, 5, 6].map(item => <i key={item}/>)}</div> }
 
-function ConnectionSettings({ profiles, sessions, theme, setTheme, close, refresh }: { profiles: number; sessions: number; theme: Theme; setTheme: (theme: Theme) => void; close: () => void; refresh: () => void }) {
+function LegacyConnectionSettings({ profiles, sessions, theme, setTheme, close, refresh }: { profiles: number; sessions: number; theme: Theme; setTheme: (theme: Theme) => void; close: () => void; refresh: () => void }) {
   const [showThemes, setShowThemes] = useState(false)
   const themes: Array<{ id: Theme; label: string; description: string }> = [
     { id: 'dark', label: 'OLED dark', description: 'Deep black with violet accents' },

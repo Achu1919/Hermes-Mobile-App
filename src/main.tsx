@@ -11,5 +11,6 @@ import './profile-sheet.css'
 import './management.css'
 import './appearance-picker.css'
 import './theme.css'
+import './connection-settings.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)

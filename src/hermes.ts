@@ -72,6 +72,11 @@ async function rpcCall<T>(method: string, params: Record<string, unknown>, baseU
   return gateway(baseUrl).call<T>(method, params)
 }
 
+export async function probeHermesGateway(baseUrl: string): Promise<{ version?: string; auth_required?: boolean; auth_flows?: string[]; auth_providers?: unknown[]; [key: string]: unknown }> {
+  const raw = await invoke<string>('hermes_connection_probe', { baseUrl })
+  return JSON.parse(raw) as { version?: string; auth_required?: boolean; auth_flows?: string[]; auth_providers?: unknown[]; [key: string]: unknown }
+}
+
 export async function loadSnapshot(baseUrl = localHermes): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] }> {
   const [raw, roster] = await Promise.all([
     invoke<string>('hermes_snapshot', { baseUrl }),
