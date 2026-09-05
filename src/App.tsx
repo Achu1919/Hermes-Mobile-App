@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Search, Settings as SettingsIcon, Users, X } from 'lucide-react'
+import { Plus, RefreshCw, Search, Settings as SettingsIcon, Users, X } from 'lucide-react'
 
 import { ChatView } from './components/ChatView'
 import { BotAvatar } from './components/BotAvatar'
@@ -61,6 +61,10 @@ export default function App() {
     model: '', provider: '', shape: 'blobatar',
   })
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('hermes-mobile-theme') as Theme | null) || 'dark')
+  const [rosterPullDistance, setRosterPullDistance] = useState(0)
+  const [rosterPullRefreshing, setRosterPullRefreshing] = useState(false)
+  const rosterScrollRef = useRef<HTMLElement | null>(null)
+  const rosterPullStartRef = useRef<number | null>(null)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -78,6 +82,10 @@ export default function App() {
       setError(reason instanceof Error ? reason.message : 'Could not connect to Hermes Desktop.')
       return null
     } finally { setLoading(false) }
+  }
+  const pullRefreshRoster = async () => {
+    setRosterPullRefreshing(true)
+    try { await refresh() } finally { setRosterPullRefreshing(false) }
   }
 
   useEffect(() => {
@@ -199,14 +207,34 @@ export default function App() {
     } finally { setCreating(false) }
   }
 
+  const rosterPullActive = rosterPullDistance > 8 || rosterPullRefreshing
+  const rosterTouchStart = (event: React.TouchEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement
+    if (target.closest('input,textarea') || rosterScrollRef.current?.scrollTop !== 0) return
+    rosterPullStartRef.current = event.touches[0].clientY
+  }
+  const rosterTouchMove = (event: React.TouchEvent<HTMLElement>) => {
+    if (rosterPullStartRef.current == null || rosterScrollRef.current?.scrollTop !== 0) return
+    const distance = Math.min(76, Math.max(0, event.touches[0].clientY - rosterPullStartRef.current))
+    if (distance > 0) event.preventDefault()
+    setRosterPullDistance(distance)
+  }
+  const rosterTouchEnd = () => {
+    const shouldRefresh = rosterPullDistance >= 56
+    rosterPullStartRef.current = null
+    setRosterPullDistance(0)
+    if (shouldRefresh) void pullRefreshRoster()
+  }
+
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
   if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
 
-  return <main className="app roster-shell">
+  return <main className="app roster-shell" ref={rosterScrollRef} onTouchStart={rosterTouchStart} onTouchMove={rosterTouchMove} onTouchEnd={rosterTouchEnd}>
     <header className="roster-head"><div><h1>{tab === 'bots' ? 'Bots' : 'Sessions'}</h1><span className={`connection ${error ? 'offline' : profiles.length ? 'online' : 'checking'}`} title={error ? 'No Hermes detected. Start Hermes Desktop, then retry.' : profiles.length ? 'Connected to Hermes Desktop' : 'Checking for Hermes Desktop…'} aria-label={error ? 'Hermes Desktop unavailable' : profiles.length ? 'Connected to Hermes Desktop' : 'Checking for Hermes Desktop'}><i className="connection-dot"/><span>{error ? 'Hermes unavailable' : profiles.length ? 'Hermes Desktop' : loading ? 'Checking…' : 'No Hermes detected'}</span></span></div><div className="header-actions"><button className="icon-button" aria-label="Search" onClick={() => setSearching(value => !value)}><Search size={18}/></button><button className="icon-button" aria-label="Settings" onClick={() => setSettings(true)}><SettingsIcon size={18}/></button></div></header>
+    {rosterPullActive && <div className="roster-pull-cue" style={{ height: `${rosterPullRefreshing ? 46 : rosterPullDistance}px` }}><RefreshCw size={15} className={rosterPullRefreshing ? 'pull-refresh-spinner' : ''}/><span>{rosterPullRefreshing ? 'Refreshing…' : rosterPullDistance >= 56 ? 'Release to refresh' : 'Pull to refresh'}</span></div>}
     {searching && <div className="search"><Search size={16}/><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={tab === 'bots' ? 'Search bots and group chats…' : 'Search sessions…'}/><button onClick={() => { setQuery(''); setSearching(false) }}><X size={16}/></button></div>}
     <nav className="tabs"><button className={tab === 'bots' ? 'active' : ''} onClick={() => setTab('bots')}>Bots</button><button className={tab === 'sessions' ? 'active' : ''} onClick={() => setTab('sessions')}>Sessions</button><button onClick={() => setTab('tasks')}>Tasks</button></nav>
     {error && <Notice message={error} retry={() => void refresh()}/>}

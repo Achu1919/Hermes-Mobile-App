@@ -31,6 +31,7 @@ export function TasksView({ back, profiles }: Props) {
   const [filter, setFilter] = useState<'all' | 'running' | 'scheduled'>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [pullDistance, setPullDistance] = useState(0)
+  const [pullRefreshing, setPullRefreshing] = useState(false)
   const scrollRef = useRef<HTMLElement | null>(null)
   const pullStartRef = useRef<number | null>(null)
   const optimisticJobsRef = useRef(new Map<string, CronJob>())
@@ -53,6 +54,10 @@ export function TasksView({ back, profiles }: Props) {
     }
     setLoading(false)
   }
+  const pullRefresh = async () => {
+    setPullRefreshing(true)
+    try { await refresh() } finally { setPullRefreshing(false) }
+  }
   useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 20_000); return () => window.clearInterval(timer) }, [scopeKey])
   const running = useMemo(() => jobs.filter(job => stateOf(job) === 'running'), [jobs])
   const scheduled = useMemo(() => jobs.filter(job => stateOf(job) === 'scheduled'), [jobs])
@@ -74,8 +79,9 @@ export function TasksView({ back, profiles }: Props) {
   const showRunning = filter !== 'scheduled' && running.length > 0
   const showScheduled = filter === 'all' || filter === 'scheduled'
   const showOther = filter === 'all' && visibleJobs.some(job => stateOf(job) !== 'scheduled')
-  return <main className="app tasks-sheet" ref={scrollRef} onTouchStart={event => { if (scrollRef.current?.scrollTop === 0) pullStartRef.current = event.touches[0].clientY }} onTouchMove={event => { if (pullStartRef.current == null || scrollRef.current?.scrollTop !== 0) return; const distance = Math.min(76, Math.max(0, event.touches[0].clientY - pullStartRef.current)); setPullDistance(distance) }} onTouchEnd={() => { const shouldRefresh = pullDistance >= 56; pullStartRef.current = null; setPullDistance(0); if (shouldRefresh) void refresh() }}>
-    {pullDistance > 8 && <div className="pull-refresh-cue">{pullDistance >= 56 ? 'Release to refresh' : 'Pull to refresh'}</div>}
+  const pullActive = pullDistance > 8 || pullRefreshing
+  return <main className="app tasks-sheet" ref={scrollRef} onTouchStart={event => { if (scrollRef.current?.scrollTop === 0) pullStartRef.current = event.touches[0].clientY }} onTouchMove={event => { if (pullStartRef.current == null || scrollRef.current?.scrollTop !== 0) return; const distance = Math.min(76, Math.max(0, event.touches[0].clientY - pullStartRef.current)); if (distance > 0) event.preventDefault(); setPullDistance(distance) }} onTouchEnd={() => { const shouldRefresh = pullDistance >= 56; pullStartRef.current = null; setPullDistance(0); if (shouldRefresh) void pullRefresh() }}>
+    {pullActive && <div className="pull-refresh-cue" style={{ height: `${pullRefreshing ? 46 : pullDistance}px` }}><RefreshCw size={15} className={pullRefreshing ? 'pull-refresh-spinner' : ''}/><span>{pullRefreshing ? 'Refreshing…' : pullDistance >= 56 ? 'Release to refresh' : 'Pull to refresh'}</span></div>}
     <header className="tasks-head"><button className="back-button" onClick={back} aria-label="Back to Bots"><ArrowLeft size={18}/></button><b>Tasks</b><button className="icon-button" onClick={() => setCreateOpen(true)} aria-label="New task"><Plus size={18}/></button></header>
     <button className="tasks-running" onClick={() => document.getElementById('running-tasks')?.scrollIntoView({ behavior: 'smooth' })}><Zap size={17}/><span>Running now</span><b>{running.length}</b><ChevronRight size={16}/></button>
     <button className="tasks-stat tasks-scheduled" onClick={() => { setFilter('scheduled'); document.getElementById('scheduled-tasks')?.scrollIntoView({ behavior: 'smooth' }) }}><CalendarClock size={17}/><span>Scheduled</span><b>{scheduled.length}</b><ChevronRight size={16}/></button>
