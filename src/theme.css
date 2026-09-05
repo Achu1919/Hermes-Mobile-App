@@ -46,3 +46,7 @@
 [data-theme='light'] .task-title em.running{color:#255bc2;background:rgba(37,91,194,.08)}
 [data-theme='light'] .capability-entry{border-color:rgba(184,126,24,.42);background:linear-gradient(110deg,rgba(218,157,59,.1),#fff 62%)}
 [data-theme='light'] .capability-entry:hover{border-color:rgba(170,112,16,.68);background:linear-gradient(110deg,rgba(218,157,59,.16),#fff 62%)}
+[data-theme='light'] .conversation-spinner i{background:#687385}
+[data-theme='light'] .mention-popover{border-color:rgba(20,35,60,.16);background:rgba(255,255,255,.98);box-shadow:0 16px 42px rgba(20,35,60,.16)}
+[data-theme='light'] .mention-popover button:hover{background:rgba(34,49,70,.07)}
+[data-theme='light'] .mention-popover small{color:#687385}

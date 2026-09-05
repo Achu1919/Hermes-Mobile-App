@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Search, Settings as SettingsIcon, Users, X } from 'lucide-react'
 
 import { ChatView } from './components/ChatView'
@@ -39,6 +39,8 @@ export default function App() {
   const [profiles, setProfiles] = useState<LiveProfile[]>([])
   const [sessions, setSessions] = useState<LiveSession[]>([])
   const [selected, setSelected] = useState<LiveSession | null>(null)
+  const [conversationLoading, setConversationLoading] = useState(false)
+  const sessionLoadRef = useRef(0)
   const [profileSheet, setProfileSheet] = useState(false)
   const [messages, setMessages] = useState<LiveMessage[]>([])
   const [draft, setDraft] = useState('')
@@ -101,16 +103,27 @@ export default function App() {
   const mentions = useMemo(() => profiles.filter(profile => (`@${profile.name}`).includes((draft.match(/@[\w-]*$/)?.[0] || '').toLowerCase())), [profiles, draft])
 
   const openSession = async (session: LiveSession, latestUsage?: LiveUsage) => {
+    const requestId = ++sessionLoadRef.current
+    const startedAt = performance.now()
     setSelected(session)
     setProfileSheet(false)
     setMessages([])
     setError('')
+    setConversationLoading(true)
     try {
       const loaded = await loadMessages(session.id, session.profile)
+      if (requestId !== sessionLoadRef.current) return
       const latestAssistant = latestUsage ? [...loaded].reverse().findIndex(message => message.role === 'assistant') : -1
       setMessages(latestAssistant >= 0 ? loaded.map((message, index) => index === loaded.length - latestAssistant - 1 ? { ...message, usage: latestUsage } : message) : loaded)
     }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.') }
+    catch (reason) {
+      if (requestId === sessionLoadRef.current) setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.')
+    }
+    finally {
+      const remaining = Math.max(0, 700 - (performance.now() - startedAt))
+      if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining))
+      if (requestId === sessionLoadRef.current) setConversationLoading(false)
+    }
   }
 
   const submit = async (attachmentRefs: { name: string; refText: string }[] = []): Promise<boolean> => {
@@ -189,7 +202,7 @@ export default function App() {
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
-  if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} stop={() => void stop()}/>
+  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
 
   return <main className="app roster-shell">
