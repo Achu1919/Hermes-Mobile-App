@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CalendarClock, ChevronRight, Pause, Pencil, Play, RefreshCw, Zap } from 'lucide-react'
 
 import { loadCronJobs, loadCronRuns, triggerCronJob, updateCronPrompt, updateCronJob, type CronJob, type CronRun, type LiveProfile } from '../hermes'
@@ -8,6 +8,19 @@ const jobTitle = (job: CronJob) => (job.name || 'Untitled task').replace(/^\[bot
 const stateOf = (job: CronJob) => job.state === 'paused' || job.enabled === false ? 'paused' : job.state === 'running' ? 'running' : job.last_error ? 'error' : 'scheduled'
 const dateLabel = (value?: number | string) => { if (!value) return '—'; const date = new Date(typeof value === 'number' ? value * 1000 : value); return Number.isNaN(date.valueOf()) ? String(value) : date.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) }
 
+export function reconcileTaskJobs(serverJobs: CronJob[], optimisticJobs: ReadonlyMap<string, CronJob>): { jobs: CronJob[]; pending: Map<string, CronJob> } {
+  const merged = new Map(serverJobs.map(job => [job.job_id, job]))
+  const pending = new Map<string, CronJob>()
+  optimisticJobs.forEach((desired, jobId) => {
+    const observed = merged.get(jobId)
+    if (!observed || stateOf(observed) !== stateOf(desired)) {
+      merged.set(jobId, desired)
+      pending.set(jobId, desired)
+    }
+  })
+  return { jobs: [...merged.values()], pending }
+}
+
 export function TasksView({ back, profiles }: Props) {
   const [jobs, setJobs] = useState<CronJob[]>([])
   const [selected, setSelected] = useState<CronJob | null>(null)
@@ -15,13 +28,41 @@ export function TasksView({ back, profiles }: Props) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
   const [filter, setFilter] = useState<'all' | 'running' | 'scheduled'>('all')
+  const optimisticJobsRef = useRef(new Map<string, CronJob>())
   const scopeKey = profiles.map(profile => profile.name).sort().join('|')
-  const refresh = async () => { setLoading(true); setError(''); try { const scopes = profiles.map(profile => profile.name); const lists = await Promise.all((scopes.length ? scopes : [undefined]).map(scope => loadCronJobs(scope))); const next = lists.flat(); setJobs(next); setSelected(current => current ? next.find(job => job.job_id === current.job_id) || null : null) } catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load Hermes scheduled tasks.') } finally { setLoading(false) } }
+  const refresh = async () => {
+    setLoading(true); setError('')
+    const scopes = profiles.map(profile => profile.name)
+    const results = await Promise.allSettled((scopes.length ? scopes : [undefined]).map(scope => loadCronJobs(scope)))
+    const successful = results.filter((result): result is PromiseFulfilledResult<CronJob[]> => result.status === 'fulfilled')
+    const failures = results.filter(result => result.status === 'rejected')
+    if (successful.length) {
+      const serverJobs = successful.flatMap(result => result.value)
+      const reconciled = reconcileTaskJobs(serverJobs, optimisticJobsRef.current)
+      optimisticJobsRef.current = reconciled.pending
+      setJobs(reconciled.jobs)
+      setSelected(current => current ? (reconciled.jobs.find(job => job.job_id === current.job_id) || current) : null)
+      if (failures.length) setError('Some Bot task lists could not refresh; showing the last confirmed state for those tasks.')
+    } else if (!jobs.length && failures.length) {
+      setError('Could not load Hermes scheduled tasks.')
+    }
+    setLoading(false)
+  }
   useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 20_000); return () => window.clearInterval(timer) }, [scopeKey])
   const running = useMemo(() => jobs.filter(job => stateOf(job) === 'running'), [jobs])
   const scheduled = useMemo(() => jobs.filter(job => stateOf(job) === 'scheduled'), [jobs])
   const visibleJobs = filter === 'running' ? running : filter === 'scheduled' ? scheduled : jobs.filter(job => stateOf(job) !== 'running')
-  const toggle = async (job: CronJob) => { const action = stateOf(job) === 'paused' ? 'resume' : 'pause'; setBusy(`${job.job_id}:toggle`); setError(''); try { await updateCronJob(job.job_id, action, job.profile); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : `Could not ${action} this task.`) } finally { setBusy('') } }
+  const toggle = async (job: CronJob) => {
+    const action = stateOf(job) === 'paused' ? 'resume' : 'pause'
+    const desired: CronJob = { ...job, enabled: action === 'resume', state: action === 'resume' ? 'scheduled' : 'paused' }
+    optimisticJobsRef.current.set(job.job_id, desired)
+    setJobs(current => current.map(item => item.job_id === job.job_id ? desired : item))
+    setSelected(current => current?.job_id === job.job_id ? desired : current)
+    setBusy(`${job.job_id}:toggle`); setError('')
+    try { await updateCronJob(job.job_id, action, job.profile); await refresh() }
+    catch (reason) { optimisticJobsRef.current.delete(job.job_id); setJobs(current => current.map(item => item.job_id === job.job_id ? job : item)); setSelected(current => current?.job_id === job.job_id ? job : current); setError(reason instanceof Error ? reason.message : `Could not ${action} this task.`) }
+    finally { setBusy('') }
+  }
   const trigger = async (job: CronJob) => { setBusy(`${job.job_id}:trigger`); setError(''); try { await triggerCronJob(job.job_id, job.profile); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Hermes could not trigger this task.') } finally { setBusy('') } }
   if (selected) return <TaskDetail job={selected} busy={busy} back={() => setSelected(null)} onRefresh={refresh} onToggle={toggle} onTrigger={trigger}/>
   const showRunning = filter !== 'scheduled' && running.length > 0
