@@ -4,7 +4,9 @@ import Markdown from 'react-markdown'
 import rehypeHighlight from 'rehype-highlight'
 import remarkGfm from 'remark-gfm'
 
-import type { LiveMessage } from '../hermes'
+import type { LiveMessage, LiveProfile } from '../hermes'
+import { formatMessageTime, formatResponseStats } from '../message-stats'
+import { BotAvatar } from './BotAvatar'
 
 function CodeBlock({ className, children }: { className?: string; children: ReactNode }) {
   const [copied, setCopied] = useState(false)
@@ -35,18 +37,45 @@ export function MarkdownContent({ children }: { children: string }) {
   }}>{withMentionLinks}</Markdown></div>
 }
 
-export function MessageCard({ message, onEdit }: { message: LiveMessage & { local?: boolean }; onEdit: (text: string) => void }) {
+type MessageCardProps = {
+  message: LiveMessage & { local?: boolean }
+  onEdit: (text: string) => void
+  profile?: LiveProfile
+  fallbackName: string
+  revealTimestamp: boolean
+  onRevealTimestamp: () => void
+}
+
+export function MessageCard({ message, onEdit, profile, fallbackName, revealTimestamp, onRevealTimestamp }: MessageCardProps) {
   const [copied, setCopied] = useState(false)
+  const [swipeStartX, setSwipeStartX] = useState<number | null>(null)
   const reasoningSummary = message.reasoning?.split('\n')[0].replace(/^#{1,6}\s*/, '').replace(/[*_`~]/g, '').trim()
+  const stats = formatResponseStats(message)
+  const timestamp = formatMessageTime(message.timestamp)
   const copy = async () => {
     await navigator.clipboard.writeText(message.content)
     setCopied(true)
     window.setTimeout(() => setCopied(false), 1400)
+  }
+  const finishSwipe = (x: number) => {
+    if (swipeStartX != null && swipeStartX - x > 42) onRevealTimestamp()
+    setSwipeStartX(null)
   }
 
   if (message.role === 'system') return null
   if (message.role === 'tool') return <div className="tool-card"><span className="tool-icon"><Wrench size={14}/></span><span><b>{message.tool_name || 'Tool activity'}</b><small>Completed</small></span><Check size={15} className="tool-check"/></div>
   if (message.role === 'user') return <article className="message-row user-row"><div className="user-bubble"><MarkdownContent>{message.content}</MarkdownContent></div><div className="message-actions"><button onClick={() => void copy()}>{copied ? <Check size={13}/> : <Copy size={13}/>}<span>{copied ? 'Copied' : 'Copy'}</span></button><button onClick={() => onEdit(message.content)}>Edit</button></div></article>
 
-  return <article className="message-row assistant-row">{message.reasoning && <details className="thinking-card"><summary><span className="thinking-title"><Lightbulb size={14}/><b>Thinking</b><em>{reasoningSummary}</em></span><span className="disclosure">⌄</span></summary><div className="thinking-copy"><MarkdownContent>{message.reasoning}</MarkdownContent></div></details>}<MarkdownContent>{message.content}</MarkdownContent><div className="message-actions"><button onClick={() => void copy()}>{copied ? <Check size={13}/> : <Copy size={13}/>}<span>{copied ? 'Copied' : 'Copy'}</span></button></div></article>
+  return <article className={`message-row assistant-row ${revealTimestamp ? 'timestamp-visible' : ''}`} onPointerDown={event => setSwipeStartX(event.clientX)} onPointerUp={event => finishSwipe(event.clientX)} onPointerCancel={() => setSwipeStartX(null)}>
+    <div className="assistant-message-layout">
+      <BotAvatar profile={profile} fallbackName={fallbackName} variant="message"/>
+      <div className="assistant-message-content">
+        {message.reasoning && <details className="thinking-card"><summary><span className="thinking-title"><Lightbulb size={14}/><b>Thinking</b><em>{reasoningSummary}</em></span><span className="disclosure">⌄</span></summary><div className="thinking-copy"><MarkdownContent>{message.reasoning}</MarkdownContent></div></details>}
+        <MarkdownContent>{message.content}</MarkdownContent>
+        {stats && <div className="response-stats" aria-label="Response generation statistics">{stats}</div>}
+        <div className="message-actions"><button onClick={() => void copy()}>{copied ? <Check size={13}/> : <Copy size={13}/>}<span>{copied ? 'Copied' : 'Copy'}</span></button></div>
+      </div>
+    </div>
+    {timestamp && <time className="message-time">{timestamp}</time>}
+  </article>
 }

@@ -6,7 +6,7 @@ import { BotAvatar } from './components/BotAvatar'
 import { BotAppearancePicker } from './components/BotAppearancePicker'
 import { BotProfileSheet } from './components/BotProfileSheet'
 import { buildBotRows } from './live-model'
-import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession } from './hermes'
+import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
 type Tab = 'bots' | 'sessions'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; shape: string }
@@ -98,18 +98,23 @@ export default function App() {
   const visibleSessions = useMemo(() => sessions.filter(session => `${session.title} ${session.profile} ${session.preview}`.toLowerCase().includes(query.toLowerCase())), [sessions, query])
   const mentions = useMemo(() => profiles.filter(profile => (`@${profile.name}`).includes((draft.match(/@[\w-]*$/)?.[0] || '').toLowerCase())), [profiles, draft])
 
-  const openSession = async (session: LiveSession) => {
+  const openSession = async (session: LiveSession, latestUsage?: LiveUsage) => {
     setSelected(session)
     setProfileSheet(false)
     setMessages([])
     setError('')
-    try { setMessages(await loadMessages(session.id, session.profile)) }
+    try {
+      const loaded = await loadMessages(session.id, session.profile)
+      const latestAssistant = latestUsage ? [...loaded].reverse().findIndex(message => message.role === 'assistant') : -1
+      setMessages(latestAssistant >= 0 ? loaded.map((message, index) => index === loaded.length - latestAssistant - 1 ? { ...message, usage: latestUsage } : message) : loaded)
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.') }
   }
 
   const submit = async () => {
     if (!selected || !draft.trim() || sending) return
     const text = draft.trim()
+    let completionUsage: LiveUsage | undefined
     setDraft('')
     setError('')
     setSending(true)
@@ -119,7 +124,10 @@ export default function App() {
     try {
       await connectAndSubmit(selected.id, selected.profile, text, (type, payload) => {
         if (type === 'message.delta') setStreaming(current => current + String(payload.text || ''))
-        if (type === 'message.complete') setStreaming(String(payload.text || ''))
+        if (type === 'message.complete') {
+          setStreaming(String(payload.text || ''))
+          completionUsage = payload.usage && typeof payload.usage === 'object' ? payload.usage as LiveUsage : undefined
+        }
         if (type === 'tool.start') setToolActivities(items => {
           const id = String(payload.tool_id || payload.name || `tool-${items.length}`)
           return [...items.filter(item => item.id !== id), { id, name: String(payload.name || 'tool'), status: 'running', summary: typeof payload.context === 'string' ? payload.context : undefined }]
@@ -130,7 +138,7 @@ export default function App() {
         })
         if (type === 'error') setError(String(payload.message || 'Hermes could not complete that request.'))
       })
-      await openSession(selected)
+      await openSession(selected, completionUsage)
       await refresh()
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Could not send to Hermes.')

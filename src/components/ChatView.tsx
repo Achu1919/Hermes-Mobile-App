@@ -38,6 +38,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
   const followingRef = useRef(true)
   const [following, setFollowing] = useState(true)
   const [unreadBelow, setUnreadBelow] = useState(0)
+  const [revealedTimestampId, setRevealedTimestampId] = useState<number | null>(null)
   const [modelMenu, setModelMenu] = useState(false)
   const [reasoningMenu, setReasoningMenu] = useState(false)
   const [modelSearch, setModelSearch] = useState('')
@@ -72,6 +73,7 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
     followingRef.current = true
     setFollowing(true)
     setUnreadBelow(0)
+    setRevealedTimestampId(null)
   }, [session.id])
 
   useLayoutEffect(() => {
@@ -189,12 +191,9 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
     <div className="thread-scroll" ref={threadRef} onScroll={onScroll}>
       <div className="thread-content" ref={contentRef}>
         {showEmptyState && <section className="chat-empty-state" aria-label={`Start a conversation with ${botName}`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="welcome"/><h1>{botName.toUpperCase()}</h1><p>Say something to get started.</p></section>}
-        {messages.map(message => <MessageCard key={message.id} message={message} onEdit={editMessage}/>)}
+        {messages.map(message => <MessageCard key={message.id} message={message} onEdit={editMessage} profile={botProfile} fallbackName={session.profile} revealTimestamp={message.role === 'assistant' && revealedTimestampId === message.id} onRevealTimestamp={() => setRevealedTimestampId(current => current === message.id ? null : message.id)}/>)}
         {toolActivities.map(activity => <ToolActivityRow activity={activity} key={activity.id}/>)}
-        {sending && <article className="message-row assistant-row live-response">
-          <div className="live-label"><span className="stream-pulse"/> {streaming ? 'Responding' : 'Thinking'}</div>
-          {streaming && <MarkdownContent>{streaming}</MarkdownContent>}
-        </article>}
+        {sending && <article className="message-row assistant-row live-response"><div className="assistant-message-layout"><BotAvatar profile={botProfile} fallbackName={session.profile} variant="message"/><div className="assistant-message-content"><div className="live-label"><span className="stream-pulse"/> {streaming ? 'Responding' : 'Thinking'}</div>{streaming && <MarkdownContent>{streaming}</MarkdownContent>}</div></div></article>}
       </div>
     </div>
 
