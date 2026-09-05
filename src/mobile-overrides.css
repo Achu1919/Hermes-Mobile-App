@@ -15,3 +15,7 @@ html::-webkit-scrollbar,body::-webkit-scrollbar,#root::-webkit-scrollbar{display
 .code-block pre::-webkit-scrollbar,.table-scroll::-webkit-scrollbar{height:5px}
 .code-block pre::-webkit-scrollbar-track,.table-scroll::-webkit-scrollbar-track{background:transparent}
 .code-block pre::-webkit-scrollbar-thumb,.table-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,.2);border-radius:99px}
+
+/* Never show desktop-style vertical scrollbar chrome in mobile surfaces; scrolling remains touch/wheel/keyboard accessible. */
+.profile-sheet,.profile-model-picker,.profile-soul textarea,.management-sheet,.tasks-sheet,.task-detail,.task-create-scroll,.task-delivery-list,.thread-scroll,.mention-panel,.app.chat-shell .model-list{scrollbar-width:none}
+.profile-sheet::-webkit-scrollbar,.profile-model-picker::-webkit-scrollbar,.profile-soul textarea::-webkit-scrollbar,.management-sheet::-webkit-scrollbar,.tasks-sheet::-webkit-scrollbar,.task-detail::-webkit-scrollbar,.task-create-scroll::-webkit-scrollbar,.task-delivery-list::-webkit-scrollbar,.thread-scroll::-webkit-scrollbar,.mention-panel::-webkit-scrollbar,.app.chat-shell .model-list::-webkit-scrollbar{width:0}
