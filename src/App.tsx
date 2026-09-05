@@ -47,7 +47,7 @@ export default function App() {
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeEndpoint, setActiveEndpoint] = useState('http://127.0.0.1:9119')
+  const [activeEndpoint, setActiveEndpoint] = useState(() => localStorage.getItem('hermes-mobile-active-endpoint') || 'http://127.0.0.1:9119')
   const [streaming, setStreaming] = useState('')
   const [sending, setSending] = useState(false)
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([])
@@ -72,6 +72,9 @@ export default function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('hermes-mobile-theme', theme)
   }, [theme])
+  useEffect(() => {
+    setActiveHermesEndpoint(activeEndpoint)
+  }, [activeEndpoint])
   const refresh = async (): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] } | null> => {
     setLoading(true)
     setError('')
@@ -229,7 +232,7 @@ export default function App() {
   }
 
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
-  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={profiles.length > 0 && !error} endpoint={profiles.length > 0 && !error ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()} onPaired={async endpoint => { setActiveHermesEndpoint(endpoint); setActiveEndpoint(endpoint); const data = await refresh(); if (!data) throw new Error('Signed in, but Hermes data could not be loaded.') }}/>
+  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={profiles.length > 0 && !error} endpoint={profiles.length > 0 && !error ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()} onPaired={async endpoint => { setActiveHermesEndpoint(endpoint); localStorage.setItem('hermes-mobile-active-endpoint', endpoint); setActiveEndpoint(endpoint); const data = await refresh(); if (!data) throw new Error('Signed in, but Hermes data could not be loaded. Check the diagnostic above, then try secure sign-in again.') }}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
   if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>

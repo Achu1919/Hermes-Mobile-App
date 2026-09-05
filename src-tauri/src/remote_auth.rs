@@ -71,7 +71,7 @@ pub fn sign_in(app: AppHandle, origin: String) -> Result<(), String> {
                     .unwrap_or("")
                     .to_string();
                 let path = line.split_whitespace().nth(1).unwrap_or("");
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nConnection: close\r\n\r\n<html><body><p>Hermes Mobile is connected. You can return to the app.</p></body></html>");
+                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<!doctype html><html><head><meta name=viewport content='width=device-width,initial-scale=1'><title>Hermes Mobile connected</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090a10;color:#f7f8ff;font:16px system-ui}.card{width:min(88vw,360px);padding:32px;border:1px solid #343350;border-radius:28px;background:#151621;text-align:center;box-shadow:0 24px 70px #0008}.mark{font-size:42px}.ok{color:#84e7a2;font-weight:700}p{color:#b8bdca;line-height:1.5}</style></head><body><main class=card><div class=mark>*</div><h1>Hermes Mobile</h1><p class=ok>Secure sign-in complete</p><p>Your phone is paired with your Hermes host. Return to Hermes Mobile to load your Bots.</p></main></body></html>");
                 break path.to_string();
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
