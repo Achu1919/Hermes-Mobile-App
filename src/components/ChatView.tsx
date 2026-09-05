@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, BrainCircuit, ChevronDown, Mic, Paperclip, RotateCw, Search, Square, X } from 'lucide-react'
 
+import { invoke } from '@tauri-apps/api/core'
 import { loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions } from '../hermes'
 import { BotAvatar } from './BotAvatar'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
@@ -174,7 +175,17 @@ export function ChatView({ session, messages, profiles, draft, setDraft, mention
       next.start()
       setRecorder(next)
       setRecordSeconds(0)
-    } catch { setControlError('Microphone access is required for voice input.') }
+    } catch (reason) {
+      const errorName = reason instanceof DOMException ? reason.name : ''
+      if (errorName === 'NotFoundError') {
+        setControlError('No microphone detected. Connect your headset, then tap the mic again.')
+      } else if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
+        try { await invoke('open_microphone_settings') } catch { /* Browser permission may still be re-requested on the next tap. */ }
+        setControlError('Microphone access is blocked. Allow Hermes Mobile in system settings, then tap the mic again.')
+      } else {
+        setControlError('Microphone access could not start. Check your headset and try again.')
+      }
+    }
   }
   const stopRecording = () => { recorder?.stop(); setRecorder(null) }
   const editMessage = (text: string) => { setDraft(text); requestAnimationFrame(() => textareaRef.current?.focus()) }

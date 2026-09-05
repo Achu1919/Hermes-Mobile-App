@@ -250,6 +250,36 @@ fn hermes_instantiate_cron_blueprint(
 }
 
 #[tauri::command]
+fn open_microphone_settings() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", "ms-settings:privacy-microphone"])
+            .spawn()
+            .map_err(|error| format!("Could not open Windows microphone settings: {error}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open")
+            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+            .spawn()
+            .map_err(|error| format!("Could not open macOS microphone settings: {error}"))?;
+        return Ok(());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        std::process::Command::new("xdg-open")
+            .arg("gnome-control-center sound")
+            .spawn()
+            .map_err(|error| format!("Could not open microphone settings: {error}"))?;
+        return Ok(());
+    }
+    #[allow(unreachable_code)]
+    Err("Open your operating system microphone privacy settings, allow Hermes Mobile, then tap the mic again.".to_string())
+}
+
+#[tauri::command]
 fn hermes_ws_url(base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
     let client = reqwest::blocking::Client::builder()
@@ -280,6 +310,7 @@ pub fn run() {
             hermes_cron_delivery_targets,
             hermes_create_cron,
             hermes_instantiate_cron_blueprint,
+            open_microphone_settings,
             hermes_ws_url
         ])
         .run(tauri::generate_context!())
