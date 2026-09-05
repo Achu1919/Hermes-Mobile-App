@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Bot, Plus, Search, Settings as SettingsIcon, Users, X } from 'lucide-react'
 
 import { ChatView } from './components/ChatView'
+import { canonicalBlobatarSvg } from './avatar-render'
 import { buildBotRows } from './live-model'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadProfileAvatar, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession } from './hermes'
 
@@ -186,21 +187,17 @@ export default function App() {
 function Avatar({ profile }: { profile: LiveProfile }) {
   const [asset, setAsset] = useState<string | null>(null)
   const meta = profile.ui_meta?.['hermes-bots']
-  const seed = [...profile.name].reduce((sum, character) => sum + character.charCodeAt(0), 0)
-  const hue = seed % 360
-  const fallbackShapes = ['circle', 'squircle', 'pill', 'triangle', 'hexagon', 'cloud', 'drop']
-  const shape = (meta?.shape || fallbackShapes[seed % fallbackShapes.length]).replace(/^blobatar(?::[^:]*)?(?::)?/, '') || 'circle'
-  const color = meta?.color || `hsl(${hue} 72% 64%)`
+  const svg = canonicalBlobatarSvg(profile.name, meta?.shape || 'blobatar', meta?.color)
 
   useEffect(() => {
     let active = true
-    if (!profile.has_avatar) return () => { active = false }
+    if (!profile.has_avatar || meta?.imageKind === 'shape') return () => { active = false }
     void loadProfileAvatar(profile.name).then(value => { if (active) setAsset(value) }).catch(() => undefined)
     return () => { active = false }
-  }, [profile.name, profile.has_avatar])
+  }, [profile.name, profile.has_avatar, meta?.imageKind])
 
   if (asset || meta?.image) return <img className="avatar-fallback bot-avatar bot-avatar-image" src={asset || meta?.image || undefined} alt=""/>
-  return <span className={`avatar-fallback bot-avatar bot-shape-${shape}`} style={{ '--hue': String(hue), '--avatar-color': color } as React.CSSProperties}><span className="bot-face" aria-hidden="true">••</span></span>
+  return <span className="avatar-fallback bot-avatar bot-avatar-svg" aria-hidden="true" dangerouslySetInnerHTML={{ __html: svg }}/>
 }
 
 function Notice({ message, retry }: { message: string; retry: () => void }) {

@@ -17,6 +17,9 @@ importers:
       '@tauri-apps/plugin-store':
         specifier: ^2.4.0
         version: 2.4.4
+      blobatar:
+        specifier: 2.0.0
+        version: 2.0.0(react@19.2.8)
       highlight.js:
         specifier: ^11.12.0
         version: 11.12.0
@@ -634,6 +637,14 @@ packages:
     resolution: {integrity: sha512-uh8vpY/1/YyFkunIDFH/12p7/7VdPKA1hejMVEbdkEaWnUz0Hesvx5EbiU6XxjyHZIOju+ZMbQJkRh+es3/spQ==}
     engines: {node: '>=6.0.0'}
     hasBin: true
+
+  blobatar@2.0.0:
+    resolution: {integrity: sha512-46STsjELfKv5hnnRYsWKgN1vlWFkaewSkwnqRRnptCD+LwxejfyXs1lYwek4fkwAtGrXabmJHP4fpzDxjnqAEg==}
+    peerDependencies:
+      react: '>=18'
+    peerDependenciesMeta:
+      react:
+        optional: true
 
   browserslist@4.28.9:
     resolution: {integrity: sha512-EWazOblFYUvlGZcfGhPUPmYh3nikUxBVb+y9MJun5f3hBi812X+8MSQTujLBtgK3cf51fJWbWfOjyeO954d+Eg==}
@@ -1672,6 +1683,10 @@ snapshots:
   bail@2.0.2: {}
 
   baseline-browser-mapping@2.11.21: {}
+
+  blobatar@2.0.0(react@19.2.8):
+    optionalDependencies:
+      react: 19.2.8
 
   browserslist@4.28.9:
     dependencies:

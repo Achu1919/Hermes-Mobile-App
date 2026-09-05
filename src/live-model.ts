@@ -6,7 +6,7 @@ export type RosterProfile = {
   provider?: string
   description?: string
   has_avatar?: boolean
-  ui_meta?: { 'hermes-bots'?: { color?: string; image?: string | null; shape?: string } }
+  ui_meta?: { 'hermes-bots'?: { color?: string; image?: string | null; imageKind?: string; shape?: string } }
   canonical_session?: ActivitySession | null
   last_session?: ActivitySession | null
 }
