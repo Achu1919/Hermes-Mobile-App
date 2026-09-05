@@ -118,6 +118,11 @@ export async function loadProfileDetails(profile: string, baseUrl = localHermes)
   return rpcCall<ProfileDetails>('profiles.describe', { name: profile }, baseUrl)
 }
 
+export async function setProfileSoul(profile: string, soul: string, baseUrl = localHermes): Promise<void> {
+  const result = await rpcCall<{ ok?: boolean; applied?: { soul?: boolean } }>('profiles.configure', { name: profile, soul }, baseUrl)
+  if (result.ok === false || result.applied?.soul === false) throw new Error('Hermes could not save this Bot’s SOUL.md.')
+}
+
 export async function setProfileModel(profile: string, provider: string, model: string, baseUrl = localHermes): Promise<void> {
   const result = await rpcCall<{ ok?: boolean; confirm_required?: boolean; confirm_message?: string }>('profiles.configure', { name: profile, provider, model }, baseUrl)
   if (result.confirm_required) throw new Error(result.confirm_message || 'This model requires confirmation in Hermes Desktop before it can become the Bot default.')

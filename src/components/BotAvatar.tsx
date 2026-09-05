@@ -13,6 +13,8 @@ type Props = {
 
 const initials = (name: string) => name.split(/[-_ ]+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase()
 
+export const shouldLoadAvatarAsset = (profile?: LiveProfile) => Boolean(profile?.has_avatar && profile.ui_meta?.['hermes-bots']?.imageKind !== 'shape')
+
 export function BotAvatar({ profile, fallbackName, variant = 'roster' }: Props) {
   const [asset, setAsset] = useState<string | null>(null)
   const meta = profile?.ui_meta?.['hermes-bots']
@@ -22,7 +24,7 @@ export function BotAvatar({ profile, fallbackName, variant = 'roster' }: Props) 
   useEffect(() => {
     let active = true
     setAsset(null)
-    if (!profile || !profile.has_avatar || meta?.imageKind === 'shape') return () => { active = false }
+    if (!profile || !shouldLoadAvatarAsset(profile)) return () => { active = false }
     void loadProfileAvatar(profile.name).then(value => { if (active) setAsset(value) }).catch(() => undefined)
     return () => { active = false }
   }, [profile?.name, profile?.has_avatar, meta?.imageKind])

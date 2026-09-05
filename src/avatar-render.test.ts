@@ -17,10 +17,12 @@ describe('Desktop Bot Mode avatar contract', () => {
     expect(canonicalBlobatarSvg('research-rabbit')).toBe(canonicalBlobatarSvg('research-rabbit'))
   })
 
-  it('uses the profile-owned legacy shape and color instead of rerolling Blobatar', () => {
+  it('uses the profile-owned legacy shape/color and Desktop compact-eye pose', () => {
     const svg = canonicalProfileAvatarSvg('gaetan', 'circle', 'hsl(30 68% 58%)')
     expect(svg).toContain('hsl(30 68% 58%)')
-    expect(svg).toContain('<circle')
-    expect(svg).not.toContain('#c458a6')
+    expect(svg).toContain('<circle cx="20" cy="20" r="16.2"')
+    expect(svg).toContain('<ellipse cx="15.4" cy="17.2" rx="2.2" ry="2.3"')
+    expect(svg).toContain('r="0.65"')
+    expect(svg).not.toContain('<rect x="12.5"')
   })
 })
