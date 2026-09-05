@@ -76,8 +76,17 @@ fn hermes_session_messages(
 }
 
 fn authenticated_post(origin: &str, path: &str, body: serde_json::Value) -> Result<String, String> {
+    authenticated_post_with_timeout(origin, path, body, Duration::from_secs(120))
+}
+
+fn authenticated_post_with_timeout(
+    origin: &str,
+    path: &str,
+    body: serde_json::Value,
+    timeout: Duration,
+) -> Result<String, String> {
     let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(120))
+        .timeout(timeout)
         .build()
         .map_err(|error| error.to_string())?;
     let token = session_token(&client, origin)?;
@@ -109,6 +118,50 @@ fn hermes_transcribe(
 }
 
 #[tauri::command]
+fn hermes_cron_runs(base_url: String, job_id: String, profile: String) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    let profile_query = if profile.trim().is_empty() {
+        String::new()
+    } else {
+        format!("?profile={}", urlencoding::encode(&profile))
+    };
+    authenticated_get(
+        &origin,
+        &format!(
+            "/api/cron/jobs/{}/runs{}",
+            urlencoding::encode(&job_id),
+            profile_query
+        ),
+    )
+}
+
+#[tauri::command]
+fn hermes_trigger_cron(
+    base_url: String,
+    job_id: String,
+    profile: String,
+) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    let profile_query = if profile.trim().is_empty() {
+        String::new()
+    } else {
+        format!("?profile={}", urlencoding::encode(&profile))
+    };
+    // Desktop deliberately waits for completion here: returning only after the
+    // persisted run result prevents the mobile client from presenting a false success.
+    authenticated_post_with_timeout(
+        &origin,
+        &format!(
+            "/api/cron/jobs/{}/trigger{}",
+            urlencoding::encode(&job_id),
+            profile_query
+        ),
+        serde_json::json!({}),
+        Duration::from_secs(24 * 60 * 60),
+    )
+}
+
+#[tauri::command]
 fn hermes_ws_url(base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
     let client = reqwest::blocking::Client::builder()
@@ -132,6 +185,8 @@ pub fn run() {
             hermes_model_options,
             hermes_session_messages,
             hermes_transcribe,
+            hermes_cron_runs,
+            hermes_trigger_cron,
             hermes_ws_url
         ])
         .run(tauri::generate_context!())

@@ -37,6 +37,7 @@ export type CronJob = {
   profile?: string
 }
 export type CronList = { jobs?: CronJob[]; scoped?: string }
+export type CronRun = { id: string; title?: string; preview?: string; last_active?: number; started_at?: number }
 type Snapshot = { sessions: { sessions: LiveSession[] } }
 
 export function buildCanonicalSessionParams(profile: string): Record<string, unknown> {
@@ -175,6 +176,17 @@ export async function installHubSkill(profile: string, name: string, baseUrl = l
 export async function loadCronJobs(profile?: string, baseUrl = localHermes): Promise<CronJob[]> {
   const result = await rpcCall<CronList>('cron.manage', { action: 'list', include_disabled: true, ...(profile ? { profile } : {}) }, baseUrl)
   return Array.isArray(result.jobs) ? result.jobs.map(job => ({ ...job, profile: result.scoped || profile || job.profile })) : []
+}
+
+export async function loadCronRuns(jobId: string, profile = '', baseUrl = localHermes): Promise<CronRun[]> {
+  const raw = await invoke<string>('hermes_cron_runs', { baseUrl, jobId, profile })
+  const result = JSON.parse(raw) as { runs?: CronRun[] }
+  return Array.isArray(result.runs) ? result.runs : []
+}
+
+export async function triggerCronJob(jobId: string, profile = '', baseUrl = localHermes): Promise<CronJob> {
+  const raw = await invoke<string>('hermes_trigger_cron', { baseUrl, jobId, profile })
+  return JSON.parse(raw) as CronJob
 }
 
 export async function updateCronJob(jobId: string, action: 'pause' | 'resume' | 'remove', profile?: string, baseUrl = localHermes): Promise<void> {
