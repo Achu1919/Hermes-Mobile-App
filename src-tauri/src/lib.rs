@@ -1,3 +1,5 @@
+mod remote_auth;
+
 use std::time::Duration;
 use tauri_plugin_opener::OpenerExt;
 
@@ -27,21 +29,33 @@ fn session_token(client: &reqwest::blocking::Client, origin: &str) -> Result<Str
         .map_err(|_| "Hermes session credential was invalid".to_string())
 }
 
-fn authenticated_get(origin: &str, path: &str) -> Result<String, String> {
+fn is_loopback(origin: &str) -> bool {
+    origin.contains("127.0.0.1") || origin.contains("localhost") || origin.contains("[::1]")
+}
+
+fn authenticated_get(app: &tauri::AppHandle, origin: &str, path: &str) -> Result<String, String> {
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(20))
         .build()
         .map_err(|error| error.to_string())?;
-    let token = session_token(&client, origin)?;
-    client
-        .get(format!("{origin}{path}"))
-        .header("X-Hermes-Session-Token", token)
+    let request = client.get(format!("{origin}{path}"));
+    let request = if is_loopback(origin) {
+        request.header("X-Hermes-Session-Token", session_token(&client, origin)?)
+    } else {
+        request.bearer_auth(remote_auth::load(app, origin)?.access_token)
+    };
+    request
         .send()
         .map_err(|error| format!("Hermes request failed: {error}"))?
         .error_for_status()
         .map_err(|error| format!("Hermes rejected the request: {error}"))?
         .text()
         .map_err(|error| format!("Could not read Hermes response: {error}"))
+}
+
+#[tauri::command]
+fn hermes_native_sign_in(app: tauri::AppHandle, base_url: String) -> Result<(), String> {
+    remote_auth::sign_in(app, server_origin(&base_url))
 }
 
 #[tauri::command]
@@ -81,19 +95,24 @@ fn hermes_connection_probe(base_url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-fn hermes_snapshot(base_url: String) -> Result<String, String> {
+fn hermes_snapshot(app: tauri::AppHandle, base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
     // Sessions are a REST projection. Bot roster rows are intentionally NOT
     // read here: the Desktop contract's profiles.list RPC owns canonical
     // hidden Bot Chat identity, preview, ui_meta, and activity.
-    let sessions = authenticated_get(&origin, "/api/profiles/sessions?limit=100&offset=0&min_messages=1&archived=exclude&order=recent&profile=all")?;
+    let sessions = authenticated_get(&app, &origin, "/api/profiles/sessions?limit=100&offset=0&min_messages=1&archived=exclude&order=recent&profile=all")?;
     Ok(format!(r#"{{"sessions":{sessions}}}"#))
 }
 
 #[tauri::command]
-fn hermes_model_options(base_url: String, profile: String) -> Result<String, String> {
+fn hermes_model_options(
+    app: tauri::AppHandle,
+    base_url: String,
+    profile: String,
+) -> Result<String, String> {
     let origin = server_origin(&base_url);
     authenticated_get(
+        &app,
         &origin,
         &format!(
             "/api/model/options?explicit_only=1&profile={}",
@@ -104,12 +123,13 @@ fn hermes_model_options(base_url: String, profile: String) -> Result<String, Str
 
 #[tauri::command]
 fn hermes_session_messages(
+    app: tauri::AppHandle,
     base_url: String,
     session_id: String,
     profile: String,
 ) -> Result<String, String> {
     let origin = server_origin(&base_url);
-    authenticated_get(&origin, &format!("/api/sessions/{session_id}/messages?profile={profile}&limit=120&order=latest&include_compacted=true"))
+    authenticated_get(&app, &origin, &format!("/api/sessions/{session_id}/messages?profile={profile}&limit=120&order=latest&include_compacted=true"))
 }
 
 fn authenticated_post(origin: &str, path: &str, body: serde_json::Value) -> Result<String, String> {
@@ -155,7 +175,12 @@ fn hermes_transcribe(
 }
 
 #[tauri::command]
-fn hermes_cron_runs(base_url: String, job_id: String, profile: String) -> Result<String, String> {
+fn hermes_cron_runs(
+    app: tauri::AppHandle,
+    base_url: String,
+    job_id: String,
+    profile: String,
+) -> Result<String, String> {
     let origin = server_origin(&base_url);
     let profile_query = if profile.trim().is_empty() {
         String::new()
@@ -163,6 +188,7 @@ fn hermes_cron_runs(base_url: String, job_id: String, profile: String) -> Result
         format!("?profile={}", urlencoding::encode(&profile))
     };
     authenticated_get(
+        &app,
         &origin,
         &format!(
             "/api/cron/jobs/{}/runs{}",
@@ -241,15 +267,15 @@ fn hermes_update_cron_prompt(
 }
 
 #[tauri::command]
-fn hermes_cron_blueprints(base_url: String) -> Result<String, String> {
+fn hermes_cron_blueprints(app: tauri::AppHandle, base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
-    authenticated_get(&origin, "/api/cron/blueprints")
+    authenticated_get(&app, &origin, "/api/cron/blueprints")
 }
 
 #[tauri::command]
-fn hermes_cron_delivery_targets(base_url: String) -> Result<String, String> {
+fn hermes_cron_delivery_targets(app: tauri::AppHandle, base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
-    authenticated_get(&origin, "/api/cron/delivery-targets")
+    authenticated_get(&app, &origin, "/api/cron/delivery-targets")
 }
 
 #[tauri::command]
@@ -317,17 +343,35 @@ fn open_microphone_settings() -> Result<(), String> {
 }
 
 #[tauri::command]
-fn hermes_ws_url(base_url: String) -> Result<String, String> {
+fn hermes_ws_url(app: tauri::AppHandle, base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
         .map_err(|error| error.to_string())?;
-    let token = session_token(&client, &origin)?;
     let ws_origin = origin
         .replacen("https://", "wss://", 1)
         .replacen("http://", "ws://", 1);
-    Ok(format!("{ws_origin}/api/ws?token={token}"))
+    if is_loopback(&origin) {
+        return Ok(format!(
+            "{ws_origin}/api/ws?token={}",
+            session_token(&client, &origin)?
+        ));
+    }
+    let ticket: serde_json::Value = client
+        .post(format!("{origin}/api/auth/ws-ticket"))
+        .bearer_auth(remote_auth::load(&app, &origin)?.access_token)
+        .send()
+        .map_err(|e| format!("Could not mint Hermes WebSocket ticket: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Hermes rejected WebSocket ticket: {e}"))?
+        .json()
+        .map_err(|_| "Hermes returned an invalid WebSocket ticket.".to_string())?;
+    let value = ticket
+        .get("ticket")
+        .and_then(|item| item.as_str())
+        .ok_or_else(|| "Hermes returned no WebSocket ticket.".to_string())?;
+    Ok(format!("{ws_origin}/api/ws?ticket={value}"))
 }
 
 #[tauri::command]
@@ -353,11 +397,13 @@ fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_keyring_store::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             open_external_url,
+            hermes_native_sign_in,
             hermes_connection_probe,
             hermes_snapshot,
             hermes_model_options,

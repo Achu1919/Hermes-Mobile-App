@@ -55,11 +55,13 @@ export function buildCanonicalSessionParams(profile: string): Record<string, unk
 }
 
 export const localHermes = 'http://127.0.0.1:9119'
+let activeHermes = localHermes
+export function setActiveHermesEndpoint(endpoint: string) { activeHermes = endpoint.replace(/\/$/, '') }
 
 const gateways = new Map<string, HermesGatewayClient>()
 const resolvedSessions = new Map<string, string>()
 
-function gateway(baseUrl = localHermes) {
+function gateway(baseUrl = activeHermes) {
   let client = gateways.get(baseUrl)
   if (!client) {
     client = new HermesGatewayClient(() => invoke<string>('hermes_ws_url', { baseUrl }))
@@ -68,7 +70,7 @@ function gateway(baseUrl = localHermes) {
   return client
 }
 
-async function rpcCall<T>(method: string, params: Record<string, unknown>, baseUrl = localHermes): Promise<T> {
+async function rpcCall<T>(method: string, params: Record<string, unknown>, baseUrl = activeHermes): Promise<T> {
   return gateway(baseUrl).call<T>(method, params)
 }
 
@@ -77,7 +79,12 @@ export async function probeHermesGateway(baseUrl: string): Promise<{ version?: s
   return JSON.parse(raw) as { version?: string; auth_required?: boolean; auth_flows?: string[]; auth_providers?: unknown[]; [key: string]: unknown }
 }
 
-export async function loadSnapshot(baseUrl = localHermes): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] }> {
+export async function nativeSignIn(baseUrl: string): Promise<void> {
+  await invoke('hermes_native_sign_in', { baseUrl })
+  setActiveHermesEndpoint(baseUrl)
+}
+
+export async function loadSnapshot(baseUrl = activeHermes): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] }> {
   const [raw, roster] = await Promise.all([
     invoke<string>('hermes_snapshot', { baseUrl }),
     rpcCall<{ profiles: LiveProfile[] }>('profiles.list', { include_sessions: true }, baseUrl),
@@ -86,7 +93,7 @@ export async function loadSnapshot(baseUrl = localHermes): Promise<{ profiles: L
   return { profiles: roster.profiles, sessions: snapshot.sessions.sessions }
 }
 
-export async function createProfile(input: { name: string; description: string; soul: string; model?: string; provider?: string; shape?: string; color?: string; title?: string }, baseUrl = localHermes): Promise<void> {
+export async function createProfile(input: { name: string; description: string; soul: string; model?: string; provider?: string; shape?: string; color?: string; title?: string }, baseUrl = activeHermes): Promise<void> {
   await rpcCall('profiles.create', {
     name: input.name,
     description: input.description,
@@ -125,32 +132,32 @@ export async function createProfile(input: { name: string; description: string; 
   }
 }
 
-export async function loadMessages(sessionId: string, profile: string, baseUrl = localHermes): Promise<LiveMessage[]> {
+export async function loadMessages(sessionId: string, profile: string, baseUrl = activeHermes): Promise<LiveMessage[]> {
   const raw = await invoke<string>('hermes_session_messages', { baseUrl, sessionId, profile })
   return (JSON.parse(raw) as { messages: LiveMessage[] }).messages
 }
 
-export async function transcribeAudio(profile: string, dataUrl: string, mimeType: string, baseUrl = localHermes): Promise<string> {
+export async function transcribeAudio(profile: string, dataUrl: string, mimeType: string, baseUrl = activeHermes): Promise<string> {
   const raw = await invoke<string>('hermes_transcribe', { baseUrl, profile, dataUrl, mimeType })
   const result = JSON.parse(raw) as { text?: string; transcript?: string }
   return result.text || result.transcript || ''
 }
 
-export async function loadModelOptions(profile: string, baseUrl = localHermes): Promise<ModelOptions> {
+export async function loadModelOptions(profile: string, baseUrl = activeHermes): Promise<ModelOptions> {
   const raw = await invoke<string>('hermes_model_options', { baseUrl, profile })
   return JSON.parse(raw) as ModelOptions
 }
 
-export async function loadProfileAvatar(profile: string, baseUrl = localHermes): Promise<string | null> {
+export async function loadProfileAvatar(profile: string, baseUrl = activeHermes): Promise<string | null> {
   const result = await rpcCall<{ found?: boolean; data?: string }>('profiles.get_asset', { name: profile, asset: 'avatar' }, baseUrl)
   return result.found && result.data ? result.data : null
 }
 
-export async function loadProfileDetails(profile: string, baseUrl = localHermes): Promise<ProfileDetails> {
+export async function loadProfileDetails(profile: string, baseUrl = activeHermes): Promise<ProfileDetails> {
   return rpcCall<ProfileDetails>('profiles.describe', { name: profile }, baseUrl)
 }
 
-export async function attachFile(sessionId: string, profile: string, input: { name: string; dataUrl: string; path?: string }, baseUrl = localHermes): Promise<{ name: string; refText: string }> {
+export async function attachFile(sessionId: string, profile: string, input: { name: string; dataUrl: string; path?: string }, baseUrl = activeHermes): Promise<{ name: string; refText: string }> {
   const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
   resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
   const result = await gateway(baseUrl).attachFile(resolved, { name: input.name, data_url: input.dataUrl, path: input.path })
@@ -158,13 +165,13 @@ export async function attachFile(sessionId: string, profile: string, input: { na
   return { name: result.name || input.name, refText: result.ref_text }
 }
 
-export async function completeSlash(sessionId: string, profile: string, text: string, baseUrl = localHermes): Promise<SlashCompletionResult> {
+export async function completeSlash(sessionId: string, profile: string, text: string, baseUrl = activeHermes): Promise<SlashCompletionResult> {
   const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
   resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
   return gateway(baseUrl).call<SlashCompletionResult>('complete.slash', { session_id: resolved, profile, text })
 }
 
-export async function setProfileDescription(profile: string, description: string, baseUrl = localHermes): Promise<void> {
+export async function setProfileDescription(profile: string, description: string, baseUrl = activeHermes): Promise<void> {
   const result = await rpcCall<{ ok?: boolean; applied?: { description?: boolean } }>('profiles.configure', { name: profile, description }, baseUrl)
   if (result.ok === false || result.applied?.description === false) throw new Error('Hermes could not save this Bot’s description.')
 }
@@ -178,7 +185,7 @@ export function capabilityUpdatePayload(skills: Capability[], toolsets: Capabili
   }
 }
 
-export async function setProfileCapabilities(profile: string, skills: Capability[], toolsets: Capability[], baseUrl = localHermes): Promise<void> {
+export async function setProfileCapabilities(profile: string, skills: Capability[], toolsets: Capability[], baseUrl = activeHermes): Promise<void> {
   const payload = capabilityUpdatePayload(skills, toolsets)
   const result = await rpcCall<{ ok?: boolean; applied?: { skills?: boolean; toolsets?: boolean } }>('profiles.configure', {
     name: profile,
@@ -187,82 +194,82 @@ export async function setProfileCapabilities(profile: string, skills: Capability
   if (result.ok === false || result.applied?.skills === false || result.applied?.toolsets === false) throw new Error('Hermes could not update this Bot’s capabilities.')
 }
 
-export async function searchHubSkills(profile: string, query: string, baseUrl = localHermes): Promise<SkillSearchResult[]> {
+export async function searchHubSkills(profile: string, query: string, baseUrl = activeHermes): Promise<SkillSearchResult[]> {
   const result = await rpcCall<{ results?: SkillSearchResult[] }>('skills.manage', { action: 'search', profile, query }, baseUrl)
   return Array.isArray(result.results) ? result.results : []
 }
 
-export async function installHubSkill(profile: string, name: string, baseUrl = localHermes): Promise<void> {
+export async function installHubSkill(profile: string, name: string, baseUrl = activeHermes): Promise<void> {
   const result = await rpcCall<{ installed?: boolean }>('skills.manage', { action: 'install', profile, query: name }, baseUrl)
   if (result.installed !== true) throw new Error(`Hermes could not install “${name}”.`)
 }
 
-export async function loadCronJobs(profile?: string, baseUrl = localHermes): Promise<CronJob[]> {
+export async function loadCronJobs(profile?: string, baseUrl = activeHermes): Promise<CronJob[]> {
   const result = await rpcCall<CronList>('cron.manage', { action: 'list', include_disabled: true, ...(profile ? { profile } : {}) }, baseUrl)
   return Array.isArray(result.jobs) ? result.jobs.map(job => ({ ...job, profile: result.scoped || profile || job.profile })) : []
 }
 
-export async function loadCronRuns(jobId: string, profile = '', baseUrl = localHermes): Promise<CronRun[]> {
+export async function loadCronRuns(jobId: string, profile = '', baseUrl = activeHermes): Promise<CronRun[]> {
   const raw = await invoke<string>('hermes_cron_runs', { baseUrl, jobId, profile })
   const result = JSON.parse(raw) as { runs?: CronRun[] }
   return Array.isArray(result.runs) ? result.runs : []
 }
 
-export async function triggerCronJob(jobId: string, profile = '', baseUrl = localHermes): Promise<CronJob> {
+export async function triggerCronJob(jobId: string, profile = '', baseUrl = activeHermes): Promise<CronJob> {
   const raw = await invoke<string>('hermes_trigger_cron', { baseUrl, jobId, profile })
   return JSON.parse(raw) as CronJob
 }
 
-export async function loadCronBlueprints(baseUrl = localHermes): Promise<AutomationBlueprint[]> {
+export async function loadCronBlueprints(baseUrl = activeHermes): Promise<AutomationBlueprint[]> {
   const raw = await invoke<string>('hermes_cron_blueprints', { baseUrl })
   const result = JSON.parse(raw) as { blueprints?: AutomationBlueprint[] }
   return Array.isArray(result.blueprints) ? result.blueprints : []
 }
 
-export async function loadCronDeliveryTargets(baseUrl = localHermes): Promise<CronDeliveryTarget[]> {
+export async function loadCronDeliveryTargets(baseUrl = activeHermes): Promise<CronDeliveryTarget[]> {
   const raw = await invoke<string>('hermes_cron_delivery_targets', { baseUrl })
   const result = JSON.parse(raw) as { targets?: CronDeliveryTarget[] }
   return Array.isArray(result.targets) ? result.targets : []
 }
 
-export async function createCronJob(profile: string, body: { name?: string; prompt: string; schedule: string; deliver?: string; model?: string; provider?: string }, baseUrl = localHermes): Promise<CronJob> {
+export async function createCronJob(profile: string, body: { name?: string; prompt: string; schedule: string; deliver?: string; model?: string; provider?: string }, baseUrl = activeHermes): Promise<CronJob> {
   const raw = await invoke<string>('hermes_create_cron', { baseUrl, profile, body })
   return JSON.parse(raw) as CronJob
 }
 
-export async function instantiateCronBlueprint(profile: string, blueprint: string, values: Record<string, string>, baseUrl = localHermes): Promise<CronJob> {
+export async function instantiateCronBlueprint(profile: string, blueprint: string, values: Record<string, string>, baseUrl = activeHermes): Promise<CronJob> {
   const raw = await invoke<string>('hermes_instantiate_cron_blueprint', { baseUrl, profile, body: { blueprint, values } })
   return JSON.parse(raw) as CronJob
 }
 
-export async function updateCronPrompt(jobId: string, prompt: string, profile = '', baseUrl = localHermes): Promise<CronJob> {
+export async function updateCronPrompt(jobId: string, prompt: string, profile = '', baseUrl = activeHermes): Promise<CronJob> {
   const raw = await invoke<string>('hermes_update_cron_prompt', { baseUrl, jobId, profile, prompt })
   return JSON.parse(raw) as CronJob
 }
 
-export async function updateCronJob(jobId: string, action: 'pause' | 'resume' | 'remove', profile?: string, baseUrl = localHermes): Promise<void> {
+export async function updateCronJob(jobId: string, action: 'pause' | 'resume' | 'remove', profile?: string, baseUrl = activeHermes): Promise<void> {
   const result = await rpcCall<{ ok?: boolean }>('cron.manage', { action, name: jobId, ...(profile ? { profile } : {}) }, baseUrl)
   if (result.ok === false) throw new Error(`Hermes could not ${action} this scheduled task.`)
 }
 
-export async function setProfileSoul(profile: string, soul: string, baseUrl = localHermes): Promise<void> {
+export async function setProfileSoul(profile: string, soul: string, baseUrl = activeHermes): Promise<void> {
   const result = await rpcCall<{ ok?: boolean; applied?: { soul?: boolean } }>('profiles.configure', { name: profile, soul }, baseUrl)
   if (result.ok === false || result.applied?.soul === false) throw new Error('Hermes could not save this Bot’s SOUL.md.')
 }
 
-export async function setProfileModel(profile: string, provider: string, model: string, baseUrl = localHermes): Promise<void> {
+export async function setProfileModel(profile: string, provider: string, model: string, baseUrl = activeHermes): Promise<void> {
   const result = await rpcCall<{ ok?: boolean; confirm_required?: boolean; confirm_message?: string }>('profiles.configure', { name: profile, provider, model }, baseUrl)
   if (result.confirm_required) throw new Error(result.confirm_message || 'This model requires confirmation in Hermes Desktop before it can become the Bot default.')
   if (result.ok === false) throw new Error('Hermes could not update the Bot default model.')
 }
 
-export async function setSessionModel(sessionId: string, profile: string, provider: string, model: string, baseUrl = localHermes): Promise<void> {
+export async function setSessionModel(sessionId: string, profile: string, provider: string, model: string, baseUrl = activeHermes): Promise<void> {
   const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
   resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
   await gateway(baseUrl).setSessionModel(resolved, provider, model)
 }
 
-export async function setSessionReasoning(sessionId: string, profile: string, effort: string, baseUrl = localHermes): Promise<void> {
+export async function setSessionReasoning(sessionId: string, profile: string, effort: string, baseUrl = activeHermes): Promise<void> {
   const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
   resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
   await gateway(baseUrl).setSessionReasoning(resolved, effort)
@@ -273,7 +280,7 @@ export async function connectAndSubmit(
   profile: string,
   text: string,
   onEvent: (type: string, payload: Record<string, unknown>, event?: GatewayEvent) => void,
-  baseUrl = localHermes,
+  baseUrl = activeHermes,
 ): Promise<void> {
   const client = gateway(baseUrl)
   const resolvedSessionId = await client.resumeSession(sessionId, profile)
@@ -281,6 +288,6 @@ export async function connectAndSubmit(
   await client.submitPrompt(resolvedSessionId, text, event => onEvent(event.type, event.payload, event))
 }
 
-export async function interruptSession(sessionId: string, baseUrl = localHermes): Promise<void> {
+export async function interruptSession(sessionId: string, baseUrl = activeHermes): Promise<void> {
   await gateway(baseUrl).interruptSession(resolvedSessions.get(`${baseUrl}:${sessionId}`) || sessionId)
 }

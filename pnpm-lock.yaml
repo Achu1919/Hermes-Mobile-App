@@ -44,6 +44,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      tauri-plugin-keyring-store-api:
+        specifier: ^0.2.0
+        version: 0.2.0
     devDependencies:
       '@tauri-apps/cli':
         specifier: ^2.10.0
@@ -460,6 +463,9 @@ packages:
 
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
+
+  '@tauri-apps/api@2.11.0':
+    resolution: {integrity: sha512-7CinYODhky9lmO23xHnUFv0Xt43fbtWMyxZcLcRBlFkcgXKuEirBvHpmtJ89YMhyeGcq20Wuc47Fa4XjyniywA==}
 
   '@tauri-apps/api@2.11.1':
     resolution: {integrity: sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==}
@@ -1068,6 +1074,9 @@ packages:
   style-to-object@1.0.14:
     resolution: {integrity: sha512-LIN7rULI0jBscWQYaSswptyderlarFkjQ+t79nzty8tcIAceVomEVlLzH5VP4Cmsv6MtKhs7qaAiwlcp+Mgaxw==}
 
+  tauri-plugin-keyring-store-api@0.2.0:
+    resolution: {integrity: sha512-ZQYb6Xj75AD+YFBNDr4Zjc751TlVCQqvcB3GXx9Q85dRkss2FKrfU1Bu3kATQAzMQcvPYT3Ww+Fi+3I+OlMVZA==}
+
   tinybench@2.9.0:
     resolution: {integrity: sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg==}
 
@@ -1511,6 +1520,8 @@ snapshots:
     optional: true
 
   '@standard-schema/spec@1.1.0': {}
+
+  '@tauri-apps/api@2.11.0': {}
 
   '@tauri-apps/api@2.11.1': {}
 
@@ -2383,6 +2394,10 @@ snapshots:
   style-to-object@1.0.14:
     dependencies:
       inline-style-parser: 0.2.7
+
+  tauri-plugin-keyring-store-api@0.2.0:
+    dependencies:
+      '@tauri-apps/api': 2.11.0
 
   tinybench@2.9.0: {}
 

@@ -9,7 +9,7 @@ import { TasksView } from './components/TasksView'
 import { ConnectionSettings } from './components/ConnectionSettings'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
 import { buildBotRows } from './live-model'
-import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
+import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
 type Tab = 'bots' | 'sessions' | 'tasks'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; shape: string }
@@ -47,6 +47,7 @@ export default function App() {
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [activeEndpoint, setActiveEndpoint] = useState('http://127.0.0.1:9119')
   const [streaming, setStreaming] = useState('')
   const [sending, setSending] = useState(false)
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([])
@@ -228,7 +229,7 @@ export default function App() {
   }
 
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
-  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={profiles.length > 0 && !error} endpoint={profiles.length > 0 && !error ? 'http://127.0.0.1:9119' : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()}/>
+  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={profiles.length > 0 && !error} endpoint={profiles.length > 0 && !error ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()} onPaired={async endpoint => { setActiveHermesEndpoint(endpoint); setActiveEndpoint(endpoint); const data = await refresh(); if (!data) throw new Error('Signed in, but Hermes data could not be loaded.') }}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
   if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>

@@ -2,7 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useState } from 'react'
 import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LoaderCircle, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
 
-import { probeHermesGateway } from '../hermes'
+import { nativeSignIn, probeHermesGateway } from '../hermes'
 
 const HermesMobileLogo = '/HermesMobileMark.png'
 
@@ -18,6 +18,7 @@ type Props = {
   setTheme: (theme: Theme) => void
   close: () => void
   refresh: () => void
+  onPaired: (endpoint: string) => Promise<void>
 }
 
 const themes: Array<{ id: Theme; label: string; description: string }> = [
@@ -63,9 +64,11 @@ function AboutHermesMobile({ back }: { back: () => void }) {
   </main>
 }
 
-function PairingSettings({ back }: { back: () => void }) {
+function PairingSettings({ back, onPaired }: { back: () => void; onPaired: (endpoint: string) => Promise<void> }) {
   const [gatewayUrl, setGatewayUrl] = useState('')
   const [checking, setChecking] = useState(false)
+  const [verifiedEndpoint, setVerifiedEndpoint] = useState<string | null>(null)
+  const [signingIn, setSigningIn] = useState(false)
   const [result, setResult] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const testGateway = async () => {
@@ -81,10 +84,22 @@ function PairingSettings({ back }: { back: () => void }) {
         return
       }
       const pkce = status.auth_flows?.includes('native_pkce') ? ' Native phone sign-in is available.' : ''
-      setResult({ tone: 'success', text: `Hermes ${status.version || 'gateway'} is reachable.${status.auth_required ? ' Authentication is required.' : ' Local development gateway detected.'}${pkce}` })
+      if (!status.auth_flows?.includes('native_pkce')) throw new Error('This Hermes gateway does not advertise secure native phone sign-in.')
+      setVerifiedEndpoint(value)
+      setResult({ tone: 'success', text: `Hermes ${status.version || 'gateway'} is reachable. Authentication is required.${pkce}` })
     } catch (error) {
       setResult({ tone: 'error', text: error instanceof Error ? error.message : 'Could not reach this Hermes gateway.' })
     } finally { setChecking(false) }
+  }
+  const completeSignIn = async () => {
+    if (!verifiedEndpoint) return
+    setSigningIn(true); setResult(null)
+    try {
+      await nativeSignIn(verifiedEndpoint)
+      await onPaired(verifiedEndpoint)
+      back()
+    } catch (error) { setResult({ tone: 'error', text: error instanceof Error ? error.message : 'Secure Hermes sign-in failed.' }) }
+    finally { setSigningIn(false) }
   }
   const copyChecklist = async () => {
     try {
@@ -101,7 +116,8 @@ function PairingSettings({ back }: { back: () => void }) {
     <section className="pairing-card">
       <div className="pairing-card-title"><Wifi size={18}/><div><b>Verify your Windows gateway</b><small>Checks the real Hermes gateway status before any sign-in.</small></div></div>
       <label className="pairing-field"><span>GATEWAY URL</span><input value={gatewayUrl} onChange={event => setGatewayUrl(event.target.value)} placeholder="https://your-pc.tailnet.ts.net:9119" inputMode="url" autoCapitalize="none" autoCorrect="off"/></label>
-      <button className="primary wide pairing-test" disabled={checking} aria-busy={checking} onClick={() => void testGateway()}>{checking ? <><LoaderCircle className="pairing-spinner" size={17}/> Checking gateway…</> : <>Test gateway</>}</button>
+      <button className="primary wide pairing-test" disabled={checking || signingIn} aria-busy={checking} onClick={() => void testGateway()}>{checking ? <><LoaderCircle className="pairing-spinner" size={17}/> Checking gateway…</> : <>Test gateway</>}</button>
+      {verifiedEndpoint && <button className="secondary wide pairing-signin" disabled={signingIn} aria-busy={signingIn} onClick={() => void completeSignIn()}>{signingIn ? <><LoaderCircle className="pairing-spinner" size={17}/> Completing secure sign-in…</> : <>Continue to secure sign-in</>}</button>}
       {result && <p className={`pairing-result ${result.tone}`}>{result.tone === 'success' ? <CheckCircle2 size={16}/> : <LockKeyhole size={16}/>}<span>{result.text}</span></p>}
       <p className="pairing-note">Never enter <code>127.0.0.1</code> or <code>localhost</code> on your phone—those point back to the phone itself.</p>
     </section>
@@ -132,11 +148,11 @@ function PairingSettings({ back }: { back: () => void }) {
   </main>
 }
 
-export function ConnectionSettings({ profiles, sessions, connected, endpoint, theme, setTheme, close, refresh }: Props) {
+export function ConnectionSettings({ profiles, sessions, connected, endpoint, theme, setTheme, close, refresh, onPaired }: Props) {
   const [page, setPage] = useState<Page>('root')
   const [showThemes, setShowThemes] = useState(false)
   if (page === 'about') return <AboutHermesMobile back={() => setPage('root')}/>
-  if (page === 'pairing') return <PairingSettings back={() => setPage('root')}/>
+  if (page === 'pairing') return <PairingSettings back={() => setPage('root')} onPaired={onPaired}/>
   const displayEndpoint = endpoint?.replace(/^https?:\/\//, '')
   return <main className="app panel connection-screen">
     <Header title="Connection" subtitle="Hermes Desktop host" back={close}/>
