@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { useState } from 'react'
-import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LoaderCircle, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
 
 import { probeHermesGateway } from '../hermes'
 
@@ -12,6 +12,8 @@ type Page = 'root' | 'pairing' | 'about'
 type Props = {
   profiles: number
   sessions: number
+  connected: boolean
+  endpoint?: string
   theme: Theme
   setTheme: (theme: Theme) => void
   close: () => void
@@ -99,7 +101,7 @@ function PairingSettings({ back }: { back: () => void }) {
     <section className="pairing-card">
       <div className="pairing-card-title"><Wifi size={18}/><div><b>Verify your Windows gateway</b><small>Checks the real Hermes gateway status before any sign-in.</small></div></div>
       <label className="pairing-field"><span>GATEWAY URL</span><input value={gatewayUrl} onChange={event => setGatewayUrl(event.target.value)} placeholder="https://your-pc.tailnet.ts.net:9119" inputMode="url" autoCapitalize="none" autoCorrect="off"/></label>
-      <button className="primary wide pairing-test" disabled={checking} onClick={() => void testGateway()}>{checking ? 'Checking gateway…' : 'Test gateway'}</button>
+      <button className="primary wide pairing-test" disabled={checking} aria-busy={checking} onClick={() => void testGateway()}>{checking ? <><LoaderCircle className="pairing-spinner" size={17}/> Checking gateway…</> : <>Test gateway</>}</button>
       {result && <p className={`pairing-result ${result.tone}`}>{result.tone === 'success' ? <CheckCircle2 size={16}/> : <LockKeyhole size={16}/>}<span>{result.text}</span></p>}
       <p className="pairing-note">Never enter <code>127.0.0.1</code> or <code>localhost</code> on your phone—those point back to the phone itself.</p>
     </section>
@@ -130,15 +132,22 @@ function PairingSettings({ back }: { back: () => void }) {
   </main>
 }
 
-export function ConnectionSettings({ profiles, sessions, theme, setTheme, close, refresh }: Props) {
+export function ConnectionSettings({ profiles, sessions, connected, endpoint, theme, setTheme, close, refresh }: Props) {
   const [page, setPage] = useState<Page>('root')
   const [showThemes, setShowThemes] = useState(false)
   if (page === 'about') return <AboutHermesMobile back={() => setPage('root')}/>
   if (page === 'pairing') return <PairingSettings back={() => setPage('root')}/>
+  const displayEndpoint = endpoint?.replace(/^https?:\/\//, '')
   return <main className="app panel connection-screen">
     <Header title="Connection" subtitle="Hermes Desktop host" back={close}/>
-    <section className="connection-card"><span className="status-pill">● Connected</span><h3>This Windows PC</h3><code>127.0.0.1:9119</code><div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div><button className="primary wide" onClick={refresh}>Sync now</button></section>
-    <section className="menu-list"><button>Notifications <span>›</span></button><button onClick={() => setShowThemes(value => !value)}>Appearance <span>{themes.find(item => item.id === theme)?.label} ›</span></button>{showThemes && <div className="theme-picker">{themes.map(item => <button className={item.id === theme ? 'selected' : ''} onClick={() => setTheme(item.id)} key={item.id}><span className={`theme-swatch theme-${item.id}`}/><span><b>{item.label}</b><small>{item.description}</small></span><i>{item.id === theme ? '✓' : ''}</i></button>)}</div>}<button onClick={() => setPage('pairing')}>Security & pairing <span>›</span></button><button onClick={() => setPage('about')}>About Hermes Mobile <span>0.1.0 ›</span></button></section>
+    <section className={`connection-card ${connected ? 'connected' : 'unpaired'}`}>
+      <span className={`status-pill ${connected ? '' : 'disconnected'}`}>● {connected ? 'Connected' : 'Not connected'}</span>
+      <h3>{connected ? 'Your Hermes host' : 'Pair this device'}</h3>
+      <code>{connected && displayEndpoint ? displayEndpoint : 'No verified Hermes host'}</code>
+      {connected ? <div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div> : <p className="connection-guidance">Connect to a private, authenticated Hermes gateway before this device can view or control your Bots.</p>}
+      <button className="primary wide" onClick={connected ? refresh : () => setPage('pairing')}>{connected ? 'Sync now' : 'Set up security & pairing'}</button>
+    </section>
+    <section className="menu-list"><button>Notifications <span>›</span></button><button onClick={() => setShowThemes(value => !value)}>Appearance <span>{themes.find(item => item.id === theme)?.label} ›</span></button>{showThemes && <div className="theme-picker">{themes.map(item => <button className={item.id === theme ? 'selected' : ''} onClick={() => setTheme(item.id)} key={item.id}><span className={`theme-swatch theme-${item.id}`}/><span><b>{item.label}</b><small>{item.description}</small></span><i>{item.id === theme ? '✓' : ''}</i></button>)}</div>}<button onClick={() => setPage('pairing')}>Security & pairing <span>{connected ? 'Connected ›' : 'Required ›'}</span></button><button onClick={() => setPage('about')}>About Hermes Mobile <span>0.1.0 ›</span></button></section>
     <p className="fine">The host owns models, credentials, tools, memory, skills, and approvals. This client is the control surface.</p>
   </main>
 }

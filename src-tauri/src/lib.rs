@@ -50,17 +50,34 @@ fn hermes_connection_probe(base_url: String) -> Result<String, String> {
     if !(origin.starts_with("https://") || origin.starts_with("http://")) {
         return Err("Enter a full http:// or https:// Hermes gateway URL".to_string());
     }
-    reqwest::blocking::Client::builder()
+    let response = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(10))
         .build()
         .map_err(|error| error.to_string())?
         .get(format!("{origin}/api/status"))
         .send()
-        .map_err(|error| format!("Could not reach this Hermes gateway: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("Hermes gateway health check failed: {error}"))?
-        .text()
-        .map_err(|error| format!("Could not read Hermes gateway health: {error}"))
+        .map_err(|error| {
+            format!(
+                "Could not reach this Hermes gateway ({error}). The address is reachable only when Hermes is bound to the Tailscale/LAN interface—not just 127.0.0.1—and its port is allowed by the host firewall."
+            )
+        })?;
+    let status = response.status();
+    let body = response.text().unwrap_or_default();
+    if !status.is_success() {
+        let detail = serde_json::from_str::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("detail")
+                    .and_then(|detail| detail.as_str())
+                    .map(str::to_string)
+            })
+            .unwrap_or_else(|| "No diagnostic was returned by the gateway.".to_string());
+        return Err(format!(
+            "Gateway returned HTTP {status}: {detail} Check the URL, Hermes host binding, and reverse-proxy/Tailscale configuration."
+        ));
+    }
+    Ok(body)
 }
 
 #[tauri::command]
