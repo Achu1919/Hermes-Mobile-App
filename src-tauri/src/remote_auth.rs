@@ -55,7 +55,7 @@ pub fn sign_in(app: AppHandle, origin: String) -> Result<(), String> {
         .open_url(&authorize, None::<&str>)
         .map_err(|e| format!("Could not open secure Hermes sign-in: {e}"))?;
     let deadline = Instant::now() + Duration::from_secs(180);
-    let callback = loop {
+    let (callback, mut callback_stream) = loop {
         if Instant::now() >= deadline {
             return Err(
                 "Secure sign-in timed out. Return to Hermes Mobile and try again.".to_string(),
@@ -71,8 +71,7 @@ pub fn sign_in(app: AppHandle, origin: String) -> Result<(), String> {
                     .unwrap_or("")
                     .to_string();
                 let path = line.split_whitespace().nth(1).unwrap_or("");
-                let _ = stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<!doctype html><html><head><meta name=viewport content='width=device-width,initial-scale=1'><title>Hermes Mobile connected</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090a10;color:#f7f8ff;font:16px system-ui}.card{width:min(88vw,360px);padding:32px;border:1px solid #343350;border-radius:28px;background:#151621;text-align:center;box-shadow:0 24px 70px #0008}.mark{font-size:42px}.ok{color:#84e7a2;font-weight:700}p{color:#b8bdca;line-height:1.5}</style></head><body><main class=card><div class=mark>*</div><h1>Hermes Mobile</h1><p class=ok>Secure sign-in complete</p><p>Your phone is paired with your Hermes host. Return to Hermes Mobile to load your Bots.</p></main></body></html>");
-                break path.to_string();
+                break (path.to_string(), stream);
             }
             Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
                 thread::sleep(Duration::from_millis(80))
@@ -112,5 +111,7 @@ pub fn sign_in(app: AppHandle, origin: String) -> Result<(), String> {
             &account(&origin),
             &serde_json::to_string(&tokens).map_err(|e| e.to_string())?,
         )
-        .map_err(|e| format!("Could not save Android secure credential: {e}"))
+        .map_err(|e| format!("Could not save Android secure credential: {e}"))?;
+    callback_stream.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nConnection: close\r\n\r\n<!doctype html><html><head><meta name=viewport content='width=device-width,initial-scale=1'><title>Hermes Mobile connected</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#090a10;color:#f7f8ff;font:16px system-ui}.card{width:min(88vw,360px);padding:32px;border:1px solid #343350;border-radius:28px;background:#151621;text-align:center;box-shadow:0 24px 70px #0008}.mark{font-size:42px}.ok{color:#84e7a2;font-weight:700}p{color:#b8bdca;line-height:1.5}</style></head><body><main class=card><div class=mark>*</div><h1>Hermes Mobile</h1><p class=ok>Secure sign-in complete</p><p>Your phone is paired with your Hermes host. Return to Hermes Mobile to load your Bots.</p></main></body></html>").map_err(|e| format!("Could not finish secure sign-in callback: {e}"))?;
+    Ok(())
 }
