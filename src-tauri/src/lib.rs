@@ -1,4 +1,5 @@
 use std::time::Duration;
+use tauri_plugin_opener::OpenerExt;
 
 fn server_origin(base_url: &str) -> String {
     base_url.trim_end_matches('/').to_string()
@@ -312,6 +313,25 @@ fn hermes_ws_url(base_url: String) -> Result<String, String> {
     Ok(format!("{ws_origin}/api/ws?token={token}"))
 }
 
+#[tauri::command]
+fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
+    const ALLOWED_PREFIXES: [&str; 4] = [
+        "https://github.com/",
+        "https://hermes-agent.nousresearch.com/",
+        "https://discord.gg/",
+        "https://v2.tauri.app/",
+    ];
+    if !ALLOWED_PREFIXES
+        .iter()
+        .any(|prefix| url.starts_with(prefix))
+    {
+        return Err("This link is not an approved Hermes Mobile destination".to_string());
+    }
+    app.opener()
+        .open_url(&url, None::<&str>)
+        .map_err(|error| format!("Could not open the system browser: {error}"))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -319,6 +339,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
+            open_external_url,
             hermes_connection_probe,
             hermes_snapshot,
             hermes_model_options,

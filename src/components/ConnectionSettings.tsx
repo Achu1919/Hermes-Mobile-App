@@ -1,4 +1,4 @@
-import { openUrl } from '@tauri-apps/plugin-opener'
+import { invoke } from '@tauri-apps/api/core'
 import { useState } from 'react'
 import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
 
@@ -25,7 +25,7 @@ const themes: Array<{ id: Theme; label: string; description: string }> = [
   { id: 'aurora', label: 'Aurora', description: 'Midnight navy with teal-violet glow' },
 ]
 
-const external = (href: string) => ({ href, onClick: (event: React.MouseEvent<HTMLAnchorElement>) => { event.preventDefault(); void openUrl(href).catch(() => window.open(href, '_blank', 'noopener,noreferrer')) } })
+const external = (href: string) => ({ href, onClick: (event: React.MouseEvent<HTMLAnchorElement>) => { event.preventDefault(); void invoke('open_external_url', { url: href }).catch(() => window.open(href, '_blank', 'noopener,noreferrer')) } })
 
 function Header({ title, subtitle, back, compact = false }: { title: string; subtitle: string; back: () => void; compact?: boolean }) {
   return <header className={`panel-head connection-head${compact ? ' compact' : ''}`}>
