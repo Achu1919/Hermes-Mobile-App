@@ -1,18 +1,26 @@
-<p align="center">
-  <img src="docs/assets/HermesMobileMark.png" alt="Hermes Mobile" width="176" />
-</p>
+<div align="center">
+  <a href="https://github.com/CodeUpdaterBot/Hermes-Mobile-App" target="_blank" rel="noreferrer">
+    <img src="docs/assets/HermesMobileMark.png" alt="Hermes Mobile logo" width="212" />
+  </a>
+  <h1>Hermes Mobile</h1>
 
-<h1 align="center">Hermes Mobile</h1>
+  A polished, cross-platform control surface for your running Hermes Desktop host.
+
+  Hermes Mobile keeps your real Bots, sessions, tools, approvals, and credentials on the host PC—then puts a compact, mobile-native control surface in your pocket.
+
+  [![Repository][badge-repository]][link-repo]
+  [![Platforms][badge-platforms]][link-repo]
+  [![Hermes Agent][badge-hermes]][link-hermes]
+  [![Tauri v2][badge-tauri]][link-tauri]
+  [![React 19][badge-react]][link-react]
+</div>
 
 <p align="center">
-  A polished cross-platform control surface for your running Hermes Desktop host.
-</p>
-
-<p align="center">
-  <a href="https://github.com/CodeUpdaterBot/Hermes-Mobile-App">Mobile app source</a> ·
-  <a href="https://hermes-agent.nousresearch.com/">Hermes Agent</a> ·
-  <a href="https://hermes-agent.nousresearch.com/docs/">Documentation</a> ·
-  <a href="https://discord.gg/NousResearch">Community</a>
+  <a href="#why-hermes-mobile">Why Hermes Mobile</a> •
+  <a href="#current-product-capabilities">Capabilities</a> •
+  <a href="#pair-an-android-phone-safely">Pair Android</a> •
+  <a href="#run-locally">Build from Source</a> •
+  <a href="https://hermes-agent.nousresearch.com/docs/">Hermes Docs</a>
 </p>
 
 ## Why Hermes Mobile
@@ -78,3 +86,12 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) before modifying the production bridge.
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent)
 - [Hermes Agent documentation](https://hermes-agent.nousresearch.com/docs/)
 - [Nous Research Discord](https://discord.gg/NousResearch)
+
+[badge-hermes]: https://img.shields.io/badge/Hermes%20Agent-Live%20control%20surface-5869D8?style=flat-square
+[badge-tauri]: https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white&style=flat-square
+[badge-react]: https://img.shields.io/badge/React-v19-149ECA?logo=react&logoColor=white&style=flat-square
+[badge-platforms]: https://img.shields.io/badge/Targets-Windows%20%C2%B7%20Android%20%C2%B7%20iOS-3B82F6?style=flat-square
+[link-hermes]: https://hermes-agent.nousresearch.com/
+[link-tauri]: https://v2.tauri.app/
+[link-react]: https://react.dev/
+[link-repo]: https://github.com/CodeUpdaterBot/Hermes-Mobile-App
