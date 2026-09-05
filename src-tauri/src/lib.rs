@@ -204,6 +204,52 @@ fn hermes_update_cron_prompt(
 }
 
 #[tauri::command]
+fn hermes_cron_blueprints(base_url: String) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    authenticated_get(&origin, "/api/cron/blueprints")
+}
+
+#[tauri::command]
+fn hermes_cron_delivery_targets(base_url: String) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    authenticated_get(&origin, "/api/cron/delivery-targets")
+}
+
+#[tauri::command]
+fn hermes_create_cron(
+    base_url: String,
+    profile: String,
+    body: serde_json::Value,
+) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    let query = if profile.trim().is_empty() {
+        String::new()
+    } else {
+        format!("?profile={}", urlencoding::encode(&profile))
+    };
+    authenticated_post(&origin, &format!("/api/cron/jobs{}", query), body)
+}
+
+#[tauri::command]
+fn hermes_instantiate_cron_blueprint(
+    base_url: String,
+    profile: String,
+    body: serde_json::Value,
+) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    let query = if profile.trim().is_empty() {
+        String::new()
+    } else {
+        format!("?profile={}", urlencoding::encode(&profile))
+    };
+    authenticated_post(
+        &origin,
+        &format!("/api/cron/blueprints/instantiate{}", query),
+        body,
+    )
+}
+
+#[tauri::command]
 fn hermes_ws_url(base_url: String) -> Result<String, String> {
     let origin = server_origin(&base_url);
     let client = reqwest::blocking::Client::builder()
@@ -230,6 +276,10 @@ pub fn run() {
             hermes_cron_runs,
             hermes_trigger_cron,
             hermes_update_cron_prompt,
+            hermes_cron_blueprints,
+            hermes_cron_delivery_targets,
+            hermes_create_cron,
+            hermes_instantiate_cron_blueprint,
             hermes_ws_url
         ])
         .run(tauri::generate_context!())

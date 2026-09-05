@@ -38,6 +38,9 @@ export type CronJob = {
 }
 export type CronList = { jobs?: CronJob[]; scoped?: string }
 export type CronRun = { id: string; title?: string; preview?: string; last_active?: number; started_at?: number }
+export type CronDeliveryTarget = { id: string; name: string; home_target_set: boolean }
+export type AutomationBlueprintField = { name: string; type: 'enum' | 'text' | 'time' | 'weekdays'; label: string; default: string | null; options: string[]; optional: boolean; help: string }
+export type AutomationBlueprint = { key: string; title: string; description: string; category: string; tags: string[]; fields: AutomationBlueprintField[] }
 type Snapshot = { sessions: { sessions: LiveSession[] } }
 
 export function buildCanonicalSessionParams(profile: string): Record<string, unknown> {
@@ -186,6 +189,28 @@ export async function loadCronRuns(jobId: string, profile = '', baseUrl = localH
 
 export async function triggerCronJob(jobId: string, profile = '', baseUrl = localHermes): Promise<CronJob> {
   const raw = await invoke<string>('hermes_trigger_cron', { baseUrl, jobId, profile })
+  return JSON.parse(raw) as CronJob
+}
+
+export async function loadCronBlueprints(baseUrl = localHermes): Promise<AutomationBlueprint[]> {
+  const raw = await invoke<string>('hermes_cron_blueprints', { baseUrl })
+  const result = JSON.parse(raw) as { blueprints?: AutomationBlueprint[] }
+  return Array.isArray(result.blueprints) ? result.blueprints : []
+}
+
+export async function loadCronDeliveryTargets(baseUrl = localHermes): Promise<CronDeliveryTarget[]> {
+  const raw = await invoke<string>('hermes_cron_delivery_targets', { baseUrl })
+  const result = JSON.parse(raw) as { targets?: CronDeliveryTarget[] }
+  return Array.isArray(result.targets) ? result.targets : []
+}
+
+export async function createCronJob(profile: string, body: { name?: string; prompt: string; schedule: string; deliver?: string; model?: string; provider?: string }, baseUrl = localHermes): Promise<CronJob> {
+  const raw = await invoke<string>('hermes_create_cron', { baseUrl, profile, body })
+  return JSON.parse(raw) as CronJob
+}
+
+export async function instantiateCronBlueprint(profile: string, blueprint: string, values: Record<string, string>, baseUrl = localHermes): Promise<CronJob> {
+  const raw = await invoke<string>('hermes_instantiate_cron_blueprint', { baseUrl, profile, body: { blueprint, values } })
   return JSON.parse(raw) as CronJob
 }
 
