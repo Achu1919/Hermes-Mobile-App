@@ -19,8 +19,11 @@ function CodeBlock({ className, children }: { className?: string; children: Reac
 }
 
 export function MarkdownContent({ children }: { children: string }) {
+  const withMentionLinks = children.replace(/(^|\s)(@[a-zA-Z0-9][\w-]*)\b/g, '$1[$2](hermes-mention:$2)')
   return <div className="markdown-body"><Markdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]} components={{
-    a: ({ children: content, ...props }) => <a {...props} target="_blank" rel="noreferrer">{content}</a>,
+    a: ({ children: content, href, ...props }) => href?.startsWith('hermes-mention:')
+      ? <span className="mention-link" {...props}>{content}</span>
+      : <a {...props} href={href} target="_blank" rel="noreferrer">{content}</a>,
     code: ({ className, children: content, ...props }) => {
       const value = String(content)
       return className || value.includes('\n')
@@ -29,7 +32,7 @@ export function MarkdownContent({ children }: { children: string }) {
     },
     pre: ({ children: content }) => <>{content}</>,
     table: ({ children: content }) => <div className="table-scroll"><table>{content}</table></div>,
-  }}>{children}</Markdown></div>
+  }}>{withMentionLinks}</Markdown></div>
 }
 
 export function MessageCard({ message, onEdit }: { message: LiveMessage & { local?: boolean }; onEdit: (text: string) => void }) {
