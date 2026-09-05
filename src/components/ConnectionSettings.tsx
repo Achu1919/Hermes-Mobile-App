@@ -1,3 +1,4 @@
+import { openUrl } from '@tauri-apps/plugin-opener'
 import { useState } from 'react'
 import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
 
@@ -24,22 +25,22 @@ const themes: Array<{ id: Theme; label: string; description: string }> = [
   { id: 'aurora', label: 'Aurora', description: 'Midnight navy with teal-violet glow' },
 ]
 
-const external = (href: string) => ({ href, target: '_blank', rel: 'noreferrer' })
+const external = (href: string) => ({ href, onClick: (event: React.MouseEvent<HTMLAnchorElement>) => { event.preventDefault(); void openUrl(href).catch(() => window.open(href, '_blank', 'noopener,noreferrer')) } })
 
-function Header({ title, subtitle, back }: { title: string; subtitle: string; back: () => void }) {
-  return <header className="panel-head connection-head">
+function Header({ title, subtitle, back, compact = false }: { title: string; subtitle: string; back: () => void; compact?: boolean }) {
+  return <header className={`panel-head connection-head${compact ? ' compact' : ''}`}>
     <button className="back-button" onClick={back} aria-label="Back"><ArrowLeft size={19}/></button>
-    <div><h2>{title}</h2><p>{subtitle}</p></div>
+    {!compact && <div><h2>{title}</h2><p>{subtitle}</p></div>}
   </header>
 }
 
 function AboutHermesMobile({ back }: { back: () => void }) {
   return <main className="app panel about-screen">
-    <Header title="About Hermes Mobile" subtitle="A companion for Hermes Desktop" back={back}/>
+    <Header title="" subtitle="" back={back} compact/>
     <section className="about-hero">
       <div className="about-logo-card"><img src={HermesMobileLogo} alt="Hermes Mobile logo"/></div>
       <h1>Hermes Mobile</h1>
-      <p>Version 0.1.0</p>
+      <p className="about-meta">A companion for Hermes Desktop <i aria-hidden="true">|</i> Version 0.1.0</p>
       <span>Control your Hermes workspace from wherever you are.</span>
     </section>
     <section className="about-story">
