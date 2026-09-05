@@ -1,5 +1,15 @@
 export type ActivitySession = { id: string; resolved_id?: string; preview?: string; last_active?: number; message_count?: number; title?: string }
-export type RosterProfile = { name: string; display_name?: string; model?: string; provider?: string; description?: string; canonical_session?: ActivitySession | null; last_session?: ActivitySession | null }
+export type RosterProfile = {
+  name: string
+  display_name?: string
+  model?: string
+  provider?: string
+  description?: string
+  has_avatar?: boolean
+  ui_meta?: { 'hermes-bots'?: { color?: string; image?: string | null; shape?: string } }
+  canonical_session?: ActivitySession | null
+  last_session?: ActivitySession | null
+}
 export type BotRow = { profile: RosterProfile; session: ActivitySession | null }
 
 export function buildBotRows(profiles: RosterProfile[]): BotRow[] {

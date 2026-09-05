@@ -3,10 +3,11 @@ import { Bot, Plus, Search, Settings as SettingsIcon, Users, X } from 'lucide-re
 
 import { ChatView } from './components/ChatView'
 import { buildBotRows } from './live-model'
-import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession } from './hermes'
+import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadProfileAvatar, loadSnapshot, type LiveMessage, type LiveProfile, type LiveSession } from './hermes'
 
 type Tab = 'bots' | 'sessions'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; emoji: string }
+type Theme = 'dark' | 'light' | 'grey' | 'aurora'
 export type ToolActivity = { id: string; name: string; status: 'running' | 'done' | 'failed'; duration_s?: number; summary?: string }
 
 const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
@@ -53,7 +54,12 @@ export default function App() {
     soul: 'You are a pragmatic software engineer. Read surrounding code before changing it, keep diffs focused, and verify your work by running it.',
     model: '', provider: '', emoji: '💻',
   })
+  const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('hermes-mobile-theme') as Theme | null) || 'dark')
 
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme
+    localStorage.setItem('hermes-mobile-theme', theme)
+  }, [theme])
   const refresh = async (): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] } | null> => {
     setLoading(true)
     setError('')
@@ -164,7 +170,7 @@ export default function App() {
   }
 
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
-  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} close={() => setSettings(false)} refresh={() => void refresh()}/>
+  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()}/>
   if (selected) return <ChatView session={selected} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} submit={() => void submit()} stop={() => void stop()}/>
 
   return <main className="app roster-shell">
@@ -178,7 +184,23 @@ export default function App() {
 }
 
 function Avatar({ profile }: { profile: LiveProfile }) {
-  return <span className="avatar-fallback" style={{ '--hue': String([...profile.name].reduce((sum, character) => sum + character.charCodeAt(0), 0) % 360) } as React.CSSProperties}>{initials(profile.display_name || profile.name)}</span>
+  const [asset, setAsset] = useState<string | null>(null)
+  const meta = profile.ui_meta?.['hermes-bots']
+  const seed = [...profile.name].reduce((sum, character) => sum + character.charCodeAt(0), 0)
+  const hue = seed % 360
+  const fallbackShapes = ['circle', 'squircle', 'pill', 'triangle', 'hexagon', 'cloud', 'drop']
+  const shape = (meta?.shape || fallbackShapes[seed % fallbackShapes.length]).replace(/^blobatar(?::[^:]*)?(?::)?/, '') || 'circle'
+  const color = meta?.color || `hsl(${hue} 72% 64%)`
+
+  useEffect(() => {
+    let active = true
+    if (!profile.has_avatar) return () => { active = false }
+    void loadProfileAvatar(profile.name).then(value => { if (active) setAsset(value) }).catch(() => undefined)
+    return () => { active = false }
+  }, [profile.name, profile.has_avatar])
+
+  if (asset || meta?.image) return <img className="avatar-fallback bot-avatar bot-avatar-image" src={asset || meta?.image || undefined} alt=""/>
+  return <span className={`avatar-fallback bot-avatar bot-shape-${shape}`} style={{ '--hue': String(hue), '--avatar-color': color } as React.CSSProperties}><span className="bot-face" aria-hidden="true">••</span></span>
 }
 
 function Notice({ message, retry }: { message: string; retry: () => void }) {
@@ -186,8 +208,15 @@ function Notice({ message, retry }: { message: string; retry: () => void }) {
 }
 function Skeleton() { return <div className="skeletons">{[1, 2, 3, 4, 5, 6].map(item => <i key={item}/>)}</div> }
 
-function ConnectionSettings({ profiles, sessions, close, refresh }: { profiles: number; sessions: number; close: () => void; refresh: () => void }) {
-  return <main className="app panel"><header className="panel-head"><button className="back-button" onClick={close}>‹</button><div><h2>Connection</h2><p>Hermes Desktop host</p></div></header><section className="connection-card"><span className="status-pill">● Connected</span><h3>This Windows PC</h3><code>127.0.0.1:9119</code><div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div><button className="primary wide" onClick={refresh}>Sync now</button></section><section className="menu-list"><button>Notifications <span>›</span></button><button>Appearance <span>OLED dark ›</span></button><button>Security & pairing <span>›</span></button><button>About Hermes Mobile <span>0.1.0 ›</span></button></section><p className="fine">The host owns models, credentials, tools, memory, skills, and approvals. This client is the control surface.</p></main>
+function ConnectionSettings({ profiles, sessions, theme, setTheme, close, refresh }: { profiles: number; sessions: number; theme: Theme; setTheme: (theme: Theme) => void; close: () => void; refresh: () => void }) {
+  const [showThemes, setShowThemes] = useState(false)
+  const themes: Array<{ id: Theme; label: string; description: string }> = [
+    { id: 'dark', label: 'OLED dark', description: 'Deep black with violet accents' },
+    { id: 'light', label: 'Light', description: 'Bright canvas with soft blue accents' },
+    { id: 'grey', label: 'Graphite', description: 'Neutral grey with cool surfaces' },
+    { id: 'aurora', label: 'Aurora', description: 'Midnight navy with teal-violet glow' },
+  ]
+  return <main className="app panel"><header className="panel-head"><button className="back-button" onClick={close}>‹</button><div><h2>Connection</h2><p>Hermes Desktop host</p></div></header><section className="connection-card"><span className="status-pill">● Connected</span><h3>This Windows PC</h3><code>127.0.0.1:9119</code><div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div><button className="primary wide" onClick={refresh}>Sync now</button></section><section className="menu-list"><button>Notifications <span>›</span></button><button onClick={() => setShowThemes(value => !value)}>Appearance <span>{themes.find(item => item.id === theme)?.label} ›</span></button>{showThemes && <div className="theme-picker">{themes.map(item => <button className={item.id === theme ? 'selected' : ''} onClick={() => { setTheme(item.id); setShowThemes(false) }} key={item.id}><span className={`theme-swatch theme-${item.id}`}/><span><b>{item.label}</b><small>{item.description}</small></span><i>{item.id === theme ? '✓' : ''}</i></button>)}</div>}<button>Security & pairing <span>›</span></button><button>About Hermes Mobile <span>0.1.0 ›</span></button></section><p className="fine">The host owns models, credentials, tools, memory, skills, and approvals. This client is the control surface.</p></main>
 }
 
 function CreateWizard({ step, setStep, draft, setDraft, creating, error, close, finish }: { step: number; setStep: (step: number) => void; draft: DraftBot; setDraft: React.Dispatch<React.SetStateAction<DraftBot>>; creating: boolean; error: string; close: () => void; finish: () => void }) {

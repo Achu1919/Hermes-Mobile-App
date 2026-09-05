@@ -86,6 +86,11 @@ export async function loadModelOptions(profile: string, baseUrl = localHermes): 
   return JSON.parse(raw) as ModelOptions
 }
 
+export async function loadProfileAvatar(profile: string, baseUrl = localHermes): Promise<string | null> {
+  const result = await rpcCall<{ found?: boolean; data?: string }>('profiles.get_asset', { name: profile, asset: 'avatar' }, baseUrl)
+  return result.found && result.data ? result.data : null
+}
+
 export async function setSessionModel(sessionId: string, profile: string, provider: string, model: string, baseUrl = localHermes): Promise<void> {
   const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
   resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
