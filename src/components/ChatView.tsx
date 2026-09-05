@@ -91,7 +91,7 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
   const allModels = useMemo(() => (modelOptions.providers || []).flatMap(item => (item.featured_models?.length ? item.featured_models : item.models || []).map(name => ({ name, provider: item.slug, providerName: item.name, authenticated: item.authenticated !== false }))).filter((item, index, rows) => rows.findIndex(other => other.provider === item.provider && other.name === item.name) === index), [modelOptions])
   const filteredModels = useMemo(() => allModels.filter(item => `${item.name} ${item.providerName}`.toLowerCase().includes(modelSearch.toLowerCase())), [allModels, modelSearch])
   const visibleError = error || controlError
-  const showConversationLoading = conversationLoading && !visibleError
+  const showConversationLoading = conversationLoading
   const showEmptyState = !conversationLoading && !messages.length && !sending && !streaming && !toolActivities.length && !visibleError
 
   const scrollToLatest = (behavior: ScrollBehavior = 'smooth') => {
