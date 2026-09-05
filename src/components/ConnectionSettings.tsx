@@ -45,7 +45,8 @@ function AboutHermesMobile({ back }: { back: () => void }) {
     </section>
     <section className="about-story">
       <p>I fell in love with Hermes after using the new Bot capabilities, and started building the mobile client I wanted: a polished, host-first companion for controlling your Hermes Bots from your phone.</p>
-      <p>Your computer &amp; hermes setup still remains the authority for your agents, credentials, approvals, tools, sessions, and files. Hermes Mobile is the mission-control surface in your pocket, similar to Grok Bot! Hope you enjoy it as much as I do&nbsp; - Creator SteStein.com</p>
+      <p>Your computer &amp; hermes setup still remains the authority for your agents, credentials, approvals, tools, sessions, and files. Hermes Mobile is the mission-control surface in your pocket, similar to Grok Bot! Hope you enjoy it as much as I do.</p>
+      <p className="about-signoff">- Creator <a {...external('https://stestein.com/')}>SteStein.com</a></p>
     </section>
     <section className="about-links" aria-label="Hermes Mobile and Hermes links">
       <p>HERMES MOBILE</p>

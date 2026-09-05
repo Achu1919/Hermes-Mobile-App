@@ -315,11 +315,12 @@ fn hermes_ws_url(base_url: String) -> Result<String, String> {
 
 #[tauri::command]
 fn open_external_url(app: tauri::AppHandle, url: String) -> Result<(), String> {
-    const ALLOWED_PREFIXES: [&str; 4] = [
+    const ALLOWED_PREFIXES: [&str; 5] = [
         "https://github.com/",
         "https://hermes-agent.nousresearch.com/",
         "https://discord.gg/",
         "https://v2.tauri.app/",
+        "https://stestein.com/",
     ];
     if !ALLOWED_PREFIXES
         .iter()
