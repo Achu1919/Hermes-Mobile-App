@@ -58,6 +58,15 @@ export function TasksView({ back, profiles }: Props) {
     setPullRefreshing(true)
     try { await refresh() } finally { setPullRefreshing(false) }
   }
+  useEffect(() => {
+    const onMobileBack = () => {
+      if (selected) setSelected(null)
+      else if (createOpen) setCreateOpen(false)
+      else back()
+    }
+    window.addEventListener('hermes-mobile-back', onMobileBack)
+    return () => window.removeEventListener('hermes-mobile-back', onMobileBack)
+  }, [selected, createOpen, back])
   useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 20_000); return () => window.clearInterval(timer) }, [scopeKey])
   const running = useMemo(() => jobs.filter(job => stateOf(job) === 'running'), [jobs])
   const scheduled = useMemo(() => jobs.filter(job => stateOf(job) === 'scheduled'), [jobs])

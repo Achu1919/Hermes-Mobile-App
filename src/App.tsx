@@ -91,7 +91,7 @@ export default function App() {
       if (navigation.selected) { event.preventDefault(); setSelected(null); return }
       if (navigation.settings) { event.preventDefault(); setSettings(false); return }
       if (navigation.createOpen) { event.preventDefault(); setCreateOpen(false); return }
-      if (navigation.tab !== 'bots') { event.preventDefault(); setTab('bots') }
+      if (navigation.tab !== 'bots') { event.preventDefault(); window.dispatchEvent(new Event('hermes-mobile-back')) }
     }).then(remove => { if (disposed) remove(); else unlisten = remove }).catch(() => {})
     return () => { disposed = true; unlisten?.() }
   }, [])
