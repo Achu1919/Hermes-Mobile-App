@@ -8,7 +8,7 @@ import { BotAvatar } from './BotAvatar'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
 import type { ToolActivity } from '../App'
 import { applySlashCompletion } from '../slash-routing'
-import { VOICE_AUTOSEND_HOLD_MS } from '../voice-input'
+import { isExpectedVoiceCleanupError, VOICE_AUTOSEND_HOLD_MS } from '../voice-input'
 
 type Timeline = LiveMessage & { local?: boolean }
 type PendingAttachment = {
@@ -79,6 +79,9 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
   const [voiceReview, setVoiceReview] = useState('')
   const [recordSeconds, setRecordSeconds] = useState(0)
   const voiceAutoSendRef = useRef(false)
+  const voiceCleanupExpectedRef = useRef(false)
+  const voiceStartRequestRef = useRef(0)
+  const voiceStartInFlightRef = useRef(false)
   const voiceStartedAtRef = useRef<number | null>(null)
   const holdTimerRef = useRef<number | null>(null)
   const ignoreMicClickRef = useRef(false)
@@ -255,6 +258,8 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
       if (!active) return
       const autoSend = voiceAutoSendRef.current
       const discard = voiceDiscardRef.current
+      voiceCleanupExpectedRef.current = true
+      voiceStartInFlightRef.current = false
       voiceDiscardRef.current = false
       voiceAutoSendRef.current = false
       setVoiceAutoSend(false)
@@ -269,15 +274,18 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
       if (!active) return
       if (event.state === 'listening') setVoiceState('listening')
       else if (event.state === 'processing') setVoiceState('processing')
+      else if (event.state === 'idle') { voiceStartInFlightRef.current = false; setVoiceState('idle'); setVoiceInterim(''); setRecordSeconds(0) }
     }))
     track(onSttError(error => {
       if (!active) return
+      const cleanupError = isExpectedVoiceCleanupError(error, voiceCleanupExpectedRef.current)
+      voiceStartInFlightRef.current = false
       voiceAutoSendRef.current = false
       setVoiceAutoSend(false)
       setVoiceState('idle')
       setVoiceInterim('')
       setRecordSeconds(0)
-      if (error.code !== 'CANCELLED') setControlError(error.code === 'NO_SPEECH' ? 'No speech was detected. Try again when you are ready.' : error.message || 'Voice input could not start.')
+      if (!cleanupError && error.code !== 'CANCELLED') setControlError(error.code === 'NO_SPEECH' ? 'No speech was detected. Try again when you are ready.' : error.message || 'Voice input could not start.')
     }))
     return () => { active = false; unlistens.forEach(unlisten => unlisten()); void stopSttListening().catch(() => {}) }
   }, [])
@@ -292,13 +300,19 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
 
   const startVoice = async (autoSend = false) => {
     if (voiceState !== 'idle' || sending) return
+    const request = ++voiceStartRequestRef.current
+    voiceStartInFlightRef.current = true
+    voiceCleanupExpectedRef.current = false
     setControlError('')
     setVoiceInterim('')
     setVoiceState('starting')
     try {
       const permission = await requestSttPermission()
+      if (request !== voiceStartRequestRef.current) return
       if (permission.microphone !== 'granted') throw new Error('Microphone permission is required. Allow Hermes Mobile to use your microphone, then try again.')
+      if (permission.speechRecognition && permission.speechRecognition !== 'granted') throw new Error('Speech recognition permission is required. Allow Hermes Mobile to recognize speech, then try again.')
       const availability = await sttIsAvailable()
+      if (request !== voiceStartRequestRef.current) return
       if (!availability.available) throw new Error(availability.reason || 'Speech recognition is not available on this device.')
       voiceDiscardRef.current = false
       voiceAutoSendRef.current = autoSend
@@ -306,7 +320,11 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
       voiceStartedAtRef.current = performance.now()
       setRecordSeconds(0)
       await startSttListening({ language: navigator.language || 'en-US', interimResults: true, continuous: false, maxDuration: 45_000 })
+      if (request !== voiceStartRequestRef.current) { voiceCleanupExpectedRef.current = true; await stopSttListening(); return }
+      voiceStartInFlightRef.current = false
     } catch (reason) {
+      if (request !== voiceStartRequestRef.current) return
+      voiceStartInFlightRef.current = false
       voiceAutoSendRef.current = false
       setVoiceAutoSend(false)
       setVoiceState('idle')
@@ -315,8 +333,20 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
     }
   }
   const finishVoice = async (discard = false) => {
-    if (voiceState === 'idle') return
+    const startPending = voiceStartInFlightRef.current
+    if (voiceState === 'idle' && !startPending) return
+    if (startPending) {
+      voiceStartRequestRef.current += 1
+      voiceStartInFlightRef.current = false
+      voiceAutoSendRef.current = false
+      setVoiceAutoSend(false)
+      setVoiceState('idle')
+      setVoiceInterim('')
+      setRecordSeconds(0)
+      return
+    }
     voiceDiscardRef.current = discard
+    voiceCleanupExpectedRef.current = true
     setVoiceState('processing')
     try { await stopSttListening() }
     catch (reason) {

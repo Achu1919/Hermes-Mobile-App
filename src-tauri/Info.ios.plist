@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>Hermes Mobile uses the microphone to turn your spoken prompts into editable text.</string>
+    <key>NSSpeechRecognitionUsageDescription</key>
+    <string>Hermes Mobile uses speech recognition to transcribe your spoken prompts before sending them to Hermes.</string>
+  </dict>
+</plist>
