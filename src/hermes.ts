@@ -83,16 +83,22 @@ export async function savedHermesEndpoint(): Promise<string | null> {
   return invoke<string | null>('hermes_saved_endpoint')
 }
 
+export async function passwordSignIn(baseUrl: string, username: string, password: string): Promise<void> {
+  await invoke('hermes_password_sign_in', { baseUrl, username, password })
+  setActiveHermesEndpoint(baseUrl)
+}
+
 export async function nativeSignIn(baseUrl: string): Promise<void> {
   await invoke('hermes_native_sign_in', { baseUrl })
   setActiveHermesEndpoint(baseUrl)
 }
 
 export async function loadSnapshot(baseUrl = activeHermes): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] }> {
-  const [raw, roster] = await Promise.all([
-    invoke<string>('hermes_snapshot', { baseUrl }),
-    rpcCall<{ profiles: LiveProfile[] }>('profiles.list', { include_sessions: true }, baseUrl),
-  ])
+  // On Android the secure credential backend is native. Sequence the native
+  // REST read before minting the WebSocket ticket to avoid concurrent keyring
+  // reads during the first authenticated handoff.
+  const raw = await invoke<string>('hermes_snapshot', { baseUrl })
+  const roster = await rpcCall<{ profiles: LiveProfile[] }>('profiles.list', { include_sessions: true }, baseUrl)
   const snapshot = JSON.parse(raw) as Snapshot
   return { profiles: roster.profiles, sessions: snapshot.sessions.sessions }
 }

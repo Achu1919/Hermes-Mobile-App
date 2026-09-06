@@ -12,6 +12,12 @@ export function selectRestoredEndpoint(nativeEndpoint: string | null | undefined
   return (nativeEndpoint || legacyEndpoint || localEndpoint).replace(/\/$/, '')
 }
 
+export function supportsBasicAuth(providers: unknown[] | undefined): boolean {
+  return providers?.some(provider => provider === 'basic' || (
+    typeof provider === 'object' && provider !== null && 'name' in provider && (provider as { name?: unknown }).name === 'basic'
+  )) === true
+}
+
 export class RequestEpoch {
   private value = 0
 

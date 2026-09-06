@@ -39,23 +39,49 @@ fn authenticated_get(app: &tauri::AppHandle, origin: &str, path: &str) -> Result
         .build()
         .map_err(|error| error.to_string())?;
     let request = client.get(format!("{origin}{path}"));
-    let request = if is_loopback(origin) {
-        request.header("X-Hermes-Session-Token", session_token(&client, origin)?)
+    if is_loopback(origin) {
+        request
+            .header("X-Hermes-Session-Token", session_token(&client, origin)?)
+            .send()
+            .map_err(|error| format!("Hermes request failed: {error}"))?
+            .error_for_status()
+            .map_err(|error| format!("Hermes rejected the request: {error}"))?
+            .text()
+            .map_err(|error| format!("Could not read Hermes response: {error}"))
     } else {
-        request.bearer_auth(remote_auth::load(app, origin)?.access_token)
-    };
-    request
-        .send()
-        .map_err(|error| format!("Hermes request failed: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("Hermes rejected the request: {error}"))?
-        .text()
-        .map_err(|error| format!("Could not read Hermes response: {error}"))
+        let mut response = request
+            .bearer_auth(remote_auth::load(app, origin)?.access_token)
+            .send()
+            .map_err(|error| format!("Hermes request failed: {error}"))?;
+        if response.status().as_u16() == 401 {
+            let refreshed = remote_auth::refresh(app, origin)?;
+            response = client
+                .get(format!("{origin}{path}"))
+                .bearer_auth(refreshed.access_token)
+                .send()
+                .map_err(|error| format!("Hermes retry failed after token refresh: {error}"))?;
+        }
+        response
+            .error_for_status()
+            .map_err(|error| format!("Hermes rejected the request: {error}"))?
+            .text()
+            .map_err(|error| format!("Could not read Hermes response: {error}"))
+    }
 }
 
 #[tauri::command]
 fn hermes_saved_endpoint(app: tauri::AppHandle) -> Result<Option<String>, String> {
     remote_auth::load_endpoint(&app)
+}
+
+#[tauri::command]
+fn hermes_password_sign_in(
+    app: tauri::AppHandle,
+    base_url: String,
+    username: String,
+    password: String,
+) -> Result<(), String> {
+    remote_auth::password_sign_in(app, server_origin(&base_url), username, password)
 }
 
 #[tauri::command]
@@ -357,26 +383,17 @@ fn hermes_ws_url(app: tauri::AppHandle, base_url: String) -> Result<String, Stri
     let ws_origin = origin
         .replacen("https://", "wss://", 1)
         .replacen("http://", "ws://", 1);
-    if is_loopback(&origin) {
-        return Ok(format!(
-            "{ws_origin}/api/ws?token={}",
-            session_token(&client, &origin)?
-        ));
-    }
-    let ticket: serde_json::Value = client
-        .post(format!("{origin}/api/auth/ws-ticket"))
-        .bearer_auth(remote_auth::load(&app, &origin)?.access_token)
-        .send()
-        .map_err(|e| format!("Could not mint Hermes WebSocket ticket: {e}"))?
-        .error_for_status()
-        .map_err(|e| format!("Hermes rejected WebSocket ticket: {e}"))?
-        .json()
-        .map_err(|_| "Hermes returned an invalid WebSocket ticket.".to_string())?;
-    let value = ticket
-        .get("ticket")
-        .and_then(|item| item.as_str())
-        .ok_or_else(|| "Hermes returned no WebSocket ticket.".to_string())?;
-    Ok(format!("{ws_origin}/api/ws?ticket={value}"))
+    let value = if is_loopback(&origin) {
+        session_token(&client, &origin)?
+    } else {
+        remote_auth::ws_ticket(&app, &origin)?
+    };
+    let query_key = if is_loopback(&origin) {
+        "token"
+    } else {
+        "ticket"
+    };
+    Ok(format!("{ws_origin}/api/ws?{query_key}={value}"))
 }
 
 #[tauri::command]
@@ -409,6 +426,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             open_external_url,
             hermes_saved_endpoint,
+            hermes_password_sign_in,
             hermes_native_sign_in,
             hermes_connection_probe,
             hermes_snapshot,

@@ -37,6 +37,9 @@ android {
             }
         }
         getByName("release") {
+            // Hermes Mobile supports private Tailscale/LAN HTTP gateways. The
+            // native password path rejects public HTTP before sending credentials.
+            manifestPlaceholders["usesCleartextTraffic"] = "true"
             isMinifyEnabled = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }

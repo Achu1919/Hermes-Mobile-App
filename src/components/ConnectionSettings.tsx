@@ -1,9 +1,9 @@
 import { invoke } from '@tauri-apps/api/core'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LoaderCircle, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
 
-import { errorMessage } from '../connection-state'
-import { nativeSignIn, probeHermesGateway } from '../hermes'
+import { errorMessage, supportsBasicAuth } from '../connection-state'
+import { nativeSignIn, passwordSignIn, probeHermesGateway } from '../hermes'
 
 const HermesMobileLogo = '/HermesMobileMark.png'
 
@@ -19,6 +19,7 @@ type Props = {
   setTheme: (theme: Theme) => void
   close: () => void
   refresh: () => void
+  onPairingBusy: (busy: boolean) => void
   onPaired: (endpoint: string) => Promise<void>
 }
 
@@ -65,42 +66,56 @@ function AboutHermesMobile({ back }: { back: () => void }) {
   </main>
 }
 
-function PairingSettings({ back, onPaired, initialEndpoint }: { back: () => void; onPaired: (endpoint: string) => Promise<void>; initialEndpoint?: string }) {
+function PairingSettings({ back, onPaired, onPairingBusy, initialEndpoint }: { back: () => void; onPaired: (endpoint: string) => Promise<void>; onPairingBusy: (busy: boolean) => void; initialEndpoint?: string }) {
   const [gatewayUrl, setGatewayUrl] = useState(initialEndpoint || '')
   const [checking, setChecking] = useState(false)
   const [verifiedEndpoint, setVerifiedEndpoint] = useState<string | null>(null)
+  const [passwordAuth, setPasswordAuth] = useState(false)
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
   const [signingIn, setSigningIn] = useState(false)
   const [result, setResult] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  const probeEpochRef = useRef(0)
   const testGateway = async () => {
     const value = gatewayUrl.trim().replace(/\/$/, '')
     if (!value) { setResult({ tone: 'error', text: 'Enter your Windows PC’s Tailscale or HTTPS gateway URL first.' }); return }
-    setChecking(true); setResult(null)
+    const probeEpoch = ++probeEpochRef.current
+    setChecking(true); setResult(null); setVerifiedEndpoint(null); setPasswordAuth(false); setPassword('')
     try {
       const status = await probeHermesGateway(value)
+      if (probeEpoch !== probeEpochRef.current) return
       const host = new URL(value).hostname.toLowerCase()
       const loopback = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
       if (!loopback && status.auth_required !== true) {
         setResult({ tone: 'error', text: 'This remote gateway is reachable but does not require authentication. Secure remote pairing requires an authenticated Hermes gateway.' })
         return
       }
-      const pkce = status.auth_flows?.includes('native_pkce') ? ' Native phone sign-in is available.' : ''
+      const supportsPassword = supportsBasicAuth(status.auth_providers)
+      setPasswordAuth(supportsPassword)
+      const pkce = status.auth_flows?.includes('native_pkce') ? ' Secure device sign-in is available.' : ''
       if (!status.auth_flows?.includes('native_pkce')) throw new Error('This Hermes gateway does not advertise secure native phone sign-in.')
       setVerifiedEndpoint(value)
       setResult({ tone: 'success', text: `Hermes ${status.version || 'gateway'} is reachable. Authentication is required.${pkce}` })
     } catch (error) {
-      setResult({ tone: 'error', text: errorMessage(error, 'Could not reach this Hermes gateway.') })
-    } finally { setChecking(false) }
+      if (probeEpoch === probeEpochRef.current) setResult({ tone: 'error', text: errorMessage(error, 'Could not reach this Hermes gateway.') })
+    } finally { if (probeEpoch === probeEpochRef.current) setChecking(false) }
   }
   const completeSignIn = async () => {
     if (!verifiedEndpoint) return
+    onPairingBusy(true)
     setSigningIn(true); setResult(null)
     try {
-      await nativeSignIn(verifiedEndpoint)
+      if (passwordAuth) await passwordSignIn(verifiedEndpoint, username.trim(), password)
+      else await nativeSignIn(verifiedEndpoint)
+      // Yield after the Android native credential write before opening the next
+      // native bridge call. This avoids concurrent Keystore access on resume.
+      await new Promise(resolve => window.setTimeout(resolve, 150))
+      setPassword('')
       await onPaired(verifiedEndpoint)
       back()
     } catch (error) { setResult({ tone: 'error', text: errorMessage(error, 'Secure Hermes sign-in failed.') }) }
-    finally { setSigningIn(false) }
+    finally { setPassword(''); setSigningIn(false); onPairingBusy(false) }
   }
   const copyChecklist = async () => {
     try {
@@ -116,9 +131,14 @@ function PairingSettings({ back, onPaired, initialEndpoint }: { back: () => void
     </section>
     <section className="pairing-card">
       <div className="pairing-card-title"><Wifi size={18}/><div><b>Verify your Windows gateway</b><small>Checks the real Hermes gateway status before any sign-in.</small></div></div>
-      <label className="pairing-field"><span>GATEWAY URL</span><input value={gatewayUrl} onChange={event => setGatewayUrl(event.target.value)} placeholder="https://your-pc.tailnet.ts.net:9119" inputMode="url" autoCapitalize="none" autoCorrect="off"/></label>
+      <label className="pairing-field"><span>GATEWAY URL</span><input value={gatewayUrl} onChange={event => { setGatewayUrl(event.target.value); probeEpochRef.current += 1; setVerifiedEndpoint(null); setPasswordAuth(false); setPassword('') }} placeholder="https://your-pc.tailnet.ts.net:9119" inputMode="url" autoCapitalize="none" autoCorrect="off"/></label>
       <button className="primary wide pairing-test" disabled={checking || signingIn} aria-busy={checking} onClick={() => void testGateway()}>{checking ? <><LoaderCircle className="pairing-spinner" size={17}/> Checking gateway…</> : <>Test gateway</>}</button>
-      {verifiedEndpoint && <button className="secondary wide pairing-signin" disabled={signingIn} aria-busy={signingIn} onClick={() => void completeSignIn()}>{signingIn ? <><LoaderCircle className="pairing-spinner" size={17}/> Completing secure sign-in…</> : <>Continue to secure sign-in</>}</button>}
+      {verifiedEndpoint && passwordAuth && <div className="pairing-credentials">
+        <label className="pairing-field"><span>USERNAME</span><input value={username} onChange={event => setUsername(event.target.value)} placeholder="Hermes gateway username" autoCapitalize="none" autoCorrect="off" autoComplete="username"/></label>
+        <label className="pairing-field"><span>PASSWORD</span><input type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Hermes gateway password" autoComplete="current-password"/></label>
+        <p className="pairing-note">Used once to obtain a revocable Hermes credential. The password itself is not saved.</p>
+      </div>}
+      {verifiedEndpoint && <button className="secondary wide pairing-signin" disabled={signingIn || (passwordAuth && (!username.trim() || !password))} aria-busy={signingIn} onClick={() => void completeSignIn()}>{signingIn ? <><LoaderCircle className="pairing-spinner" size={17}/> Signing in and connecting…</> : <>{passwordAuth ? 'Sign in & connect' : 'Continue to secure sign-in'}</>}</button>}
       {result && <p className={`pairing-result ${result.tone}`}>{result.tone === 'success' ? <CheckCircle2 size={16}/> : <LockKeyhole size={16}/>}<span>{result.text}</span></p>}
       <p className="pairing-note">Never enter <code>127.0.0.1</code> or <code>localhost</code> on your phone—those point back to the phone itself.</p>
     </section>
@@ -127,7 +147,7 @@ function PairingSettings({ back, onPaired, initialEndpoint }: { back: () => void
       <ol>
         <li><Smartphone size={17}/><span><b>Join the same Tailnet</b><small>Install Tailscale on Windows and Android, then sign into the same account.</small></span></li>
         <li><Wifi size={17}/><span><b>Run a reachable Hermes gateway</b><small>Use a Tailscale hostname or authenticated HTTPS URL. Keep direct public port exposure off.</small></span></li>
-        <li><LockKeyhole size={17}/><span><b>Authenticate on the phone</b><small>Use Hermes’ supported gateway session-token or OAuth flow. Credentials belong in Android Keystore or iOS Keychain, never in chat or a URL.</small></span></li>
+        <li><LockKeyhole size={17}/><span><b>Authenticate inside Hermes Mobile</b><small>Enter the gateway username and password once. Mobile exchanges them for revocable Hermes tokens and keeps those tokens in Android secure storage; your password is not saved.</small></span></li>
       </ol>
     </section>
     <section className="pairing-actions">
@@ -141,19 +161,19 @@ function PairingSettings({ back, onPaired, initialEndpoint }: { back: () => void
         <li><b>Use a private home network.</b> Keep both devices on the same Wi‑Fi. Do not use guest Wi‑Fi, public hotspots, or networks with client isolation.</li>
         <li><b>Publish an authenticated Hermes gateway.</b> Bind Hermes to the Windows PC’s private LAN interface and allow the port only from your local subnet in Windows Firewall. Hermes requires password or OAuth authentication on a non-loopback address.</li>
         <li><b>Enter the private gateway URL above, then test it.</b> A LAN URL looks like <code>http://192.168.1.x:9119</code> or your private HTTPS hostname. The Test gateway action checks Hermes’ actual status before sign-in.</li>
-        <li><b>Confirm the phone with Hermes authentication.</b> A future native mobile sign-in will use Hermes’ server-issued PKCE/token flow and fresh WebSocket ticket—not a client-generated PIN that could be spoofed.</li>
+        <li><b>Sign in inside Hermes Mobile.</b> Mobile uses Hermes’ native PKCE/token exchange without opening a browser, stores the revocable credential in Android secure storage, and then verifies authenticated REST plus live WebSocket access.</li>
       </ol>
-      <p className="lan-sharing-note"><LockKeyhole size={14}/> A custom pairing code is intentionally not shown yet: Hermes does not currently expose a mobile device-PIN pairing endpoint, and a local-only code would not prove identity to the host. Until native sign-in ships, this screen safely verifies reachability and explains the supported connection path.</p>
+      <p className="lan-sharing-note"><LockKeyhole size={14}/> A custom pairing code is intentionally not used: Hermes does not expose a mobile device-PIN endpoint, and a client-generated PIN would not prove identity to the host. The supported Hermes username/password exchange issues revocable tokens instead.</p>
     </section>
-    <p className="pairing-disclosure">This desktop build validates gateway reachability without collecting a credential. The mobile sign-in layer must use OS-backed secure storage and Hermes’ supported token/OAuth flow before it changes the active agent connection.</p>
+    <p className="pairing-disclosure">Hermes Mobile verifies reachability first, exchanges your gateway credentials for revocable Hermes tokens inside the native app, stores tokens in OS-backed secure storage, and marks the host connected only after REST and WebSocket verification.</p>
   </main>
 }
 
-export function ConnectionSettings({ profiles, sessions, connected, endpoint, theme, setTheme, close, refresh, onPaired }: Props) {
+export function ConnectionSettings({ profiles, sessions, connected, endpoint, theme, setTheme, close, refresh, onPairingBusy, onPaired }: Props) {
   const [page, setPage] = useState<Page>('root')
   const [showThemes, setShowThemes] = useState(false)
   if (page === 'about') return <AboutHermesMobile back={() => setPage('root')}/>
-  if (page === 'pairing') return <PairingSettings back={() => setPage('root')} onPaired={onPaired} initialEndpoint={endpoint}/>
+  if (page === 'pairing') return <PairingSettings back={() => setPage('root')} onPaired={onPaired} onPairingBusy={onPairingBusy} initialEndpoint={endpoint}/>
   const displayEndpoint = endpoint?.replace(/^https?:\/\//, '')
   return <main className="app panel connection-screen">
     <Header title="Connection" subtitle="Hermes Desktop host" back={close}/>

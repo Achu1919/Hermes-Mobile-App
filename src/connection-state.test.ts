@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
+import { errorMessage, RequestEpoch, selectRestoredEndpoint, supportsBasicAuth } from './connection-state'
 
 describe('connection state', () => {
   it('prefers the native lifecycle-safe endpoint over legacy browser storage', () => {
@@ -11,6 +11,12 @@ describe('connection state', () => {
   it('preserves string rejections from Tauri instead of hiding diagnostics', () => {
     expect(errorMessage('Hermes rejected WebSocket ticket: 401 Unauthorized', 'generic'))
       .toBe('Hermes rejected WebSocket ticket: 401 Unauthorized')
+  })
+
+  it('recognizes the Hermes basic provider for in-app sign-in', () => {
+    expect(supportsBasicAuth(['basic'])).toBe(true)
+    expect(supportsBasicAuth([{ name: 'basic' }])).toBe(true)
+    expect(supportsBasicAuth(['nous'])).toBe(false)
   })
 
   it('rejects a stale loopback refresh after a newer pairing attempt begins', () => {
