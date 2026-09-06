@@ -8,5 +8,5 @@ import type { LiveMessage, LiveUsage } from './hermes'
 export function appendCompletedAssistantMessage(messages: LiveMessage[], content: string, usage?: LiveUsage, id = -(Date.now() + 1)): LiveMessage[] {
   const text = content.trim()
   if (!text) return messages
-  return [...messages, { id, role: 'assistant', content, usage }]
+  return [...messages, { id, role: 'assistant', content, usage, local: true } as LiveMessage]
 }

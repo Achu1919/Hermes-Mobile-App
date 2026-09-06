@@ -70,6 +70,7 @@ export function MessageCard({ message, onEdit, profile, fallbackName, revealTime
     <div className="assistant-message-layout">
       <BotAvatar profile={profile} fallbackName={fallbackName} variant="message"/>
       <div className="assistant-message-content">
+        {message.local && <div className="live-label live-label-placeholder" aria-hidden="true"><span className="stream-pulse"/> Responding</div>}
         {message.reasoning && <details className="thinking-card"><summary><span className="thinking-title"><Lightbulb size={14}/><b>Thinking</b><em>{reasoningSummary}</em></span><span className="disclosure">⌄</span></summary><div className="thinking-copy"><MarkdownContent>{message.reasoning}</MarkdownContent></div></details>}
         <MarkdownContent>{message.content}</MarkdownContent>
         {stats && <div className="response-stats" aria-label="Response generation statistics">{stats}</div>}
