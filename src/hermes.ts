@@ -79,6 +79,10 @@ export async function probeHermesGateway(baseUrl: string): Promise<{ version?: s
   return JSON.parse(raw) as { version?: string; auth_required?: boolean; auth_flows?: string[]; auth_providers?: unknown[]; [key: string]: unknown }
 }
 
+export async function savedHermesEndpoint(): Promise<string | null> {
+  return invoke<string | null>('hermes_saved_endpoint')
+}
+
 export async function nativeSignIn(baseUrl: string): Promise<void> {
   await invoke('hermes_native_sign_in', { baseUrl })
   setActiveHermesEndpoint(baseUrl)

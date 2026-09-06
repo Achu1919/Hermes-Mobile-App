@@ -9,7 +9,8 @@ import { TasksView } from './components/TasksView'
 import { ConnectionSettings } from './components/ConnectionSettings'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
 import { buildBotRows } from './live-model'
-import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
+import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
+import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
 type Tab = 'bots' | 'sessions' | 'tasks'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; shape: string }
@@ -47,7 +48,12 @@ export default function App() {
   const [draft, setDraft] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [activeEndpoint, setActiveEndpoint] = useState(() => localStorage.getItem('hermes-mobile-active-endpoint') || 'http://127.0.0.1:9119')
+  const [activeEndpoint, setActiveEndpoint] = useState(() => selectRestoredEndpoint(null, localStorage.getItem('hermes-mobile-active-endpoint'), 'http://127.0.0.1:9119'))
+  const activeEndpointRef = useRef(activeEndpoint)
+  const refreshEpochRef = useRef(new RequestEpoch())
+  const refreshInFlightRef = useRef(false)
+  const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking')
+  const lastConnectionErrorRef = useRef('')
   const [streaming, setStreaming] = useState('')
   const [sending, setSending] = useState(false)
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([])
@@ -72,21 +78,43 @@ export default function App() {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('hermes-mobile-theme', theme)
   }, [theme])
-  useEffect(() => {
-    setActiveHermesEndpoint(activeEndpoint)
-  }, [activeEndpoint])
-  const refresh = async (): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] } | null> => {
+  const activateEndpoint = (endpoint: string) => {
+    const normalized = endpoint.replace(/\/$/, '')
+    activeEndpointRef.current = normalized
+    setActiveHermesEndpoint(normalized)
+    setActiveEndpoint(normalized)
+    return normalized
+  }
+  const refresh = async (requestedEndpoint = activeEndpointRef.current, supersede = false): Promise<{ profiles: LiveProfile[]; sessions: LiveSession[] } | null> => {
+    if (refreshInFlightRef.current && !supersede) return null
+    const endpoint = requestedEndpoint.replace(/\/$/, '')
+    const epoch = refreshEpochRef.current.begin()
+    refreshInFlightRef.current = true
     setLoading(true)
-    setError('')
+    if (supersede) setConnectionStatus('checking')
     try {
-      const data = await loadSnapshot()
+      const data = await loadSnapshot(endpoint)
+      if (!refreshEpochRef.current.isCurrent(epoch)) return null
       setProfiles(data.profiles)
       setSessions(data.sessions)
+      setError('')
+      lastConnectionErrorRef.current = ''
+      setConnectionStatus('connected')
       return data
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not connect to Hermes Desktop.')
+      if (refreshEpochRef.current.isCurrent(epoch)) {
+        const message = errorMessage(reason, 'Could not connect to Hermes Desktop.')
+        lastConnectionErrorRef.current = message
+        setError(message)
+        setConnectionStatus('disconnected')
+      }
       return null
-    } finally { setLoading(false) }
+    } finally {
+      if (refreshEpochRef.current.isCurrent(epoch)) {
+        refreshInFlightRef.current = false
+        setLoading(false)
+      }
+    }
   }
   const pullRefreshRoster = async () => {
     setRosterPullRefreshing(true)
@@ -94,9 +122,38 @@ export default function App() {
   }
 
   useEffect(() => {
-    void refresh()
-    const timer = window.setInterval(() => void refresh(), 5_000)
-    return () => window.clearInterval(timer)
+    let active = true
+    let timer: number | undefined
+    const bootstrap = async () => {
+      let nativeEndpoint: string | null = null
+      try { nativeEndpoint = await savedHermesEndpoint() }
+      catch (reason) { if (active) setError(errorMessage(reason, 'Could not restore the saved Hermes host.')) }
+      if (!active) return
+      const endpoint = activateEndpoint(selectRestoredEndpoint(nativeEndpoint, localStorage.getItem('hermes-mobile-active-endpoint'), 'http://127.0.0.1:9119'))
+      await refresh(endpoint, true)
+      if (active) timer = window.setInterval(() => void refresh(activeEndpointRef.current), 5_000)
+    }
+    void bootstrap()
+    return () => { active = false; if (timer) window.clearInterval(timer); refreshEpochRef.current.begin() }
+  }, [])
+
+  useEffect(() => {
+    const resumeSavedConnection = async () => {
+      if (document.visibilityState !== 'visible') return
+      try {
+        const saved = await savedHermesEndpoint()
+        if (!saved) return
+        const endpoint = activateEndpoint(saved)
+        await refresh(endpoint, true)
+      } catch (reason) {
+        const message = errorMessage(reason, 'Could not restore the saved Hermes host.')
+        lastConnectionErrorRef.current = message
+        setError(message)
+        setConnectionStatus('disconnected')
+      }
+    }
+    document.addEventListener('visibilitychange', resumeSavedConnection)
+    return () => document.removeEventListener('visibilitychange', resumeSavedConnection)
   }, [])
 
   const rows = useMemo(() => buildBotRows(profiles).map(({ profile, session }) => ({
@@ -232,14 +289,14 @@ export default function App() {
   }
 
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
-  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={profiles.length > 0 && !error} endpoint={profiles.length > 0 && !error ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()} onPaired={async endpoint => { setActiveHermesEndpoint(endpoint); localStorage.setItem('hermes-mobile-active-endpoint', endpoint); setActiveEndpoint(endpoint); const data = await refresh(); if (!data) throw new Error('Signed in, but Hermes data could not be loaded. Check the diagnostic above, then try secure sign-in again.') }}/>
+  if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={connectionStatus === 'connected'} endpoint={activeEndpoint !== 'http://127.0.0.1:9119' ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()} onPaired={async endpoint => { const normalized = activateEndpoint(endpoint); const data = await refresh(normalized, true); if (!data) throw new Error(lastConnectionErrorRef.current || 'Signed in, but authenticated Hermes REST or live WebSocket verification failed.'); localStorage.setItem('hermes-mobile-active-endpoint', normalized) }}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
   if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
 
   return <main className="app roster-shell">
     <div className="roster-pinned">
-      <header className="roster-head"><div><h1>{tab === 'bots' ? 'Bots' : 'Sessions'}</h1><span className={`connection ${error ? 'offline' : profiles.length ? 'online' : 'checking'}`} title={error ? 'No Hermes detected. Start Hermes Desktop, then retry.' : profiles.length ? 'Connected to Hermes Desktop' : 'Checking for Hermes Desktop…'} aria-label={error ? 'Hermes Desktop unavailable' : profiles.length ? 'Connected to Hermes Desktop' : 'Checking for Hermes Desktop'}><i className="connection-dot"/><span>{error ? 'Hermes unavailable' : profiles.length ? 'Hermes Desktop' : loading ? 'Checking…' : 'No Hermes detected'}</span></span></div><div className="header-actions"><button className="icon-button" aria-label="Search" onClick={() => setSearching(value => !value)}><Search size={18}/></button><button className="icon-button" aria-label="Settings" onClick={() => setSettings(true)}><SettingsIcon size={18}/></button></div></header>
+      <header className="roster-head"><div><h1>{tab === 'bots' ? 'Bots' : 'Sessions'}</h1><span className={`connection ${connectionStatus === 'disconnected' ? 'offline' : connectionStatus === 'connected' ? 'online' : 'checking'}`} title={connectionStatus === 'disconnected' ? 'No Hermes detected. Start Hermes Desktop, then retry.' : connectionStatus === 'connected' ? 'Connected to Hermes Desktop' : 'Checking for Hermes Desktop…'} aria-label={connectionStatus === 'disconnected' ? 'Hermes Desktop unavailable' : connectionStatus === 'connected' ? 'Connected to Hermes Desktop' : 'Checking for Hermes Desktop'}><i className="connection-dot"/><span>{connectionStatus === 'disconnected' ? 'Hermes unavailable' : connectionStatus === 'connected' ? 'Hermes Desktop' : 'Checking…'}</span></span></div><div className="header-actions"><button className="icon-button" aria-label="Search" onClick={() => setSearching(value => !value)}><Search size={18}/></button><button className="icon-button" aria-label="Settings" onClick={() => setSettings(true)}><SettingsIcon size={18}/></button></div></header>
       {searching && <div className="search"><Search size={16}/><input autoFocus value={query} onChange={event => setQuery(event.target.value)} placeholder={tab === 'bots' ? 'Search bots and group chats…' : 'Search sessions…'}/><button onClick={() => { setQuery(''); setSearching(false) }}><X size={16}/></button></div>}
       <nav className="tabs"><button className={tab === 'bots' ? 'active' : ''} onClick={() => setTab('bots')}>Bots</button><button className={tab === 'sessions' ? 'active' : ''} onClick={() => setTab('sessions')}>Sessions</button><button onClick={() => setTab('tasks')}>Tasks</button></nav>
     </div>

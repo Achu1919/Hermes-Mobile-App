@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { useState } from 'react'
 import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LoaderCircle, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
 
+import { errorMessage } from '../connection-state'
 import { nativeSignIn, probeHermesGateway } from '../hermes'
 
 const HermesMobileLogo = '/HermesMobileMark.png'
@@ -64,8 +65,8 @@ function AboutHermesMobile({ back }: { back: () => void }) {
   </main>
 }
 
-function PairingSettings({ back, onPaired }: { back: () => void; onPaired: (endpoint: string) => Promise<void> }) {
-  const [gatewayUrl, setGatewayUrl] = useState('')
+function PairingSettings({ back, onPaired, initialEndpoint }: { back: () => void; onPaired: (endpoint: string) => Promise<void>; initialEndpoint?: string }) {
+  const [gatewayUrl, setGatewayUrl] = useState(initialEndpoint || '')
   const [checking, setChecking] = useState(false)
   const [verifiedEndpoint, setVerifiedEndpoint] = useState<string | null>(null)
   const [signingIn, setSigningIn] = useState(false)
@@ -88,7 +89,7 @@ function PairingSettings({ back, onPaired }: { back: () => void; onPaired: (endp
       setVerifiedEndpoint(value)
       setResult({ tone: 'success', text: `Hermes ${status.version || 'gateway'} is reachable. Authentication is required.${pkce}` })
     } catch (error) {
-      setResult({ tone: 'error', text: error instanceof Error ? error.message : 'Could not reach this Hermes gateway.' })
+      setResult({ tone: 'error', text: errorMessage(error, 'Could not reach this Hermes gateway.') })
     } finally { setChecking(false) }
   }
   const completeSignIn = async () => {
@@ -98,7 +99,7 @@ function PairingSettings({ back, onPaired }: { back: () => void; onPaired: (endp
       await nativeSignIn(verifiedEndpoint)
       await onPaired(verifiedEndpoint)
       back()
-    } catch (error) { setResult({ tone: 'error', text: error instanceof Error ? error.message : 'Secure Hermes sign-in failed.' }) }
+    } catch (error) { setResult({ tone: 'error', text: errorMessage(error, 'Secure Hermes sign-in failed.') }) }
     finally { setSigningIn(false) }
   }
   const copyChecklist = async () => {
@@ -152,16 +153,16 @@ export function ConnectionSettings({ profiles, sessions, connected, endpoint, th
   const [page, setPage] = useState<Page>('root')
   const [showThemes, setShowThemes] = useState(false)
   if (page === 'about') return <AboutHermesMobile back={() => setPage('root')}/>
-  if (page === 'pairing') return <PairingSettings back={() => setPage('root')} onPaired={onPaired}/>
+  if (page === 'pairing') return <PairingSettings back={() => setPage('root')} onPaired={onPaired} initialEndpoint={endpoint}/>
   const displayEndpoint = endpoint?.replace(/^https?:\/\//, '')
   return <main className="app panel connection-screen">
     <Header title="Connection" subtitle="Hermes Desktop host" back={close}/>
     <section className={`connection-card ${connected ? 'connected' : 'unpaired'}`}>
       <span className={`status-pill ${connected ? '' : 'disconnected'}`}>● {connected ? 'Connected' : 'Not connected'}</span>
-      <h3>{connected ? 'Your Hermes host' : 'Pair this device'}</h3>
-      <code>{connected && displayEndpoint ? displayEndpoint : 'No verified Hermes host'}</code>
-      {connected ? <div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div> : <p className="connection-guidance">Connect to a private, authenticated Hermes gateway before this device can view or control your Bots.</p>}
-      <button className="primary wide" onClick={connected ? refresh : () => setPage('pairing')}>{connected ? 'Sync now' : 'Set up security & pairing'}</button>
+      <h3>{connected ? 'Your Hermes host' : endpoint ? 'Saved host needs attention' : 'Pair this device'}</h3>
+      <code>{displayEndpoint || 'No verified Hermes host'}</code>
+      {connected ? <div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div> : <p className="connection-guidance">{endpoint ? 'Your host and secure sign-in are saved. Retry verification below; you do not need to re-enter the address.' : 'Connect to a private, authenticated Hermes gateway before this device can view or control your Bots.'}</p>}
+      <button className="primary wide" onClick={connected || endpoint ? refresh : () => setPage('pairing')}>{connected ? 'Sync now' : endpoint ? 'Retry saved connection' : 'Set up security & pairing'}</button>
     </section>
     <section className="menu-list"><button>Notifications <span>›</span></button><button onClick={() => setShowThemes(value => !value)}>Appearance <span>{themes.find(item => item.id === theme)?.label} ›</span></button>{showThemes && <div className="theme-picker">{themes.map(item => <button className={item.id === theme ? 'selected' : ''} onClick={() => setTheme(item.id)} key={item.id}><span className={`theme-swatch theme-${item.id}`}/><span><b>{item.label}</b><small>{item.description}</small></span><i>{item.id === theme ? '✓' : ''}</i></button>)}</div>}<button onClick={() => setPage('pairing')}>Security & pairing <span>{connected ? 'Connected ›' : 'Required ›'}</span></button><button onClick={() => setPage('about')}>About Hermes Mobile <span>0.1.0 ›</span></button></section>
     <p className="fine">The host owns models, credentials, tools, memory, skills, and approvals. This client is the control surface.</p>

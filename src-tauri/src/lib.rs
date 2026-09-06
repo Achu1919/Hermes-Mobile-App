@@ -54,6 +54,11 @@ fn authenticated_get(app: &tauri::AppHandle, origin: &str, path: &str) -> Result
 }
 
 #[tauri::command]
+fn hermes_saved_endpoint(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    remote_auth::load_endpoint(&app)
+}
+
+#[tauri::command]
 fn hermes_native_sign_in(app: tauri::AppHandle, base_url: String) -> Result<(), String> {
     remote_auth::sign_in(app, server_origin(&base_url))
 }
@@ -403,6 +408,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             open_external_url,
+            hermes_saved_endpoint,
             hermes_native_sign_in,
             hermes_connection_probe,
             hermes_snapshot,
