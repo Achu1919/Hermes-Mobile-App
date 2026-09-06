@@ -2,12 +2,13 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, BrainCircuit, Check, ChevronDown, FileText, LoaderCircle, Mic, Paperclip, RotateCw, Search, Sparkles, Square, Trash2, X } from 'lucide-react'
 import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react'
 
-import { invoke } from '@tauri-apps/api/core'
-import { attachFile, completeSlash, loadModelOptions, setSessionModel, setSessionReasoning, transcribeAudio, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions, type SlashCompletion } from '../hermes'
+import { onError as onSttError, onResult as onSttResult, onStateChange as onSttStateChange, isAvailable as sttIsAvailable, requestPermission as requestSttPermission, startListening as startSttListening, stopListening as stopSttListening } from 'tauri-plugin-stt-api'
+import { attachFile, completeSlash, loadModelOptions, setSessionModel, setSessionReasoning, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions, type SlashCompletion } from '../hermes'
 import { BotAvatar } from './BotAvatar'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
 import type { ToolActivity } from '../App'
 import { applySlashCompletion } from '../slash-routing'
+import { VOICE_AUTOSEND_HOLD_MS } from '../voice-input'
 
 type Timeline = LiveMessage & { local?: boolean }
 type PendingAttachment = {
@@ -35,6 +36,7 @@ type Props = {
   openProfile: () => void
   onSessionModelChange: (model: string) => void
   submit: (attachments?: { name: string; refText: string }[]) => Promise<boolean>
+  submitVoice: (text: string) => Promise<boolean>
   stop: () => void
 }
 
@@ -53,7 +55,7 @@ const attachmentId = (file: File) => `${file.name}:${file.size}:${file.lastModif
 const formatFileSize = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`
 const maxAttachmentBytes = 50 * 1024 * 1024
 
-export function ChatView({ session, conversationLoading, messages, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, openProfile, onSessionModelChange, submit, stop }: Props) {
+export function ChatView({ session, conversationLoading, messages, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, openProfile, onSessionModelChange, submit, submitVoice, stop }: Props) {
   const threadRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -71,9 +73,15 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
   const [provider, setProvider] = useState('')
   const [reasoning, setReasoning] = useState('medium')
   const [controlError, setControlError] = useState('')
-  const [recorder, setRecorder] = useState<MediaRecorder | null>(null)
+  const [voiceState, setVoiceState] = useState<'idle' | 'starting' | 'listening' | 'processing'>('idle')
+  const [voiceAutoSend, setVoiceAutoSend] = useState(false)
+  const [voiceInterim, setVoiceInterim] = useState('')
+  const [voiceReview, setVoiceReview] = useState('')
   const [recordSeconds, setRecordSeconds] = useState(0)
-  const [transcribing, setTranscribing] = useState(false)
+  const voiceAutoSendRef = useRef(false)
+  const voiceStartedAtRef = useRef<number | null>(null)
+  const holdTimerRef = useRef<number | null>(null)
+  const ignoreMicClickRef = useRef(false)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [draggingFiles, setDraggingFiles] = useState(false)
   const [pullDistance, setPullDistance] = useState(0)
@@ -184,12 +192,6 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
     field.style.height = `${Math.min(132, Math.max(24, field.scrollHeight))}px`
   }, [draft])
 
-  useEffect(() => {
-    if (!recorder) return
-    const timer = window.setInterval(() => setRecordSeconds(value => value + 1), 1000)
-    return () => window.clearInterval(timer)
-  }, [recorder])
-
   const onScroll = () => {
     const thread = threadRef.current
     if (!thread) return
@@ -239,39 +241,103 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
     } catch (reason) { setControlError(reason instanceof Error ? reason.message : 'Could not change reasoning effort.') }
   }
 
-  const startRecording = async () => {
-    setControlError('')
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-      const next = new MediaRecorder(stream)
-      const chunks: Blob[] = []
-      next.ondataavailable = event => { if (event.data.size) chunks.push(event.data) }
-      next.onstop = () => {
-        stream.getTracks().forEach(track => track.stop())
-        const blob = new Blob(chunks, { type: next.mimeType || 'audio/webm' })
-        const reader = new FileReader()
-        reader.onload = async () => {
-          setTranscribing(true)
-          try { setDraft(await transcribeAudio(session.profile, String(reader.result), blob.type)) }
-          catch (reason) { setControlError(reason instanceof Error ? reason.message : 'Voice transcription failed.') }
-          finally { setTranscribing(false); setRecordSeconds(0) }
-        }
-        reader.readAsDataURL(blob)
-      }
-      next.start()
-      setRecorder(next)
+  const submitVoiceRef = useRef(submitVoice)
+  const voiceDiscardRef = useRef(false)
+  submitVoiceRef.current = submitVoice
+
+  useEffect(() => {
+    let active = true
+    const unlistens: Array<() => void> = []
+    const track = (subscription: Promise<() => void>) => { void subscription.then(unlisten => { if (active) unlistens.push(unlisten); else unlisten() }).catch(() => {}) }
+    track(onSttResult(result => {
+      if (!result.isFinal) { if (active) setVoiceInterim(result.transcript); return }
+      const transcript = result.transcript.trim()
+      if (!active) return
+      const autoSend = voiceAutoSendRef.current
+      const discard = voiceDiscardRef.current
+      voiceDiscardRef.current = false
+      voiceAutoSendRef.current = false
+      setVoiceAutoSend(false)
+      setVoiceInterim('')
+      setVoiceState('idle')
       setRecordSeconds(0)
+      if (!transcript || discard) return
+      if (autoSend) void submitVoiceRef.current(transcript)
+      else { setVoiceReview(transcript); setDraft(transcript) }
+    }))
+    track(onSttStateChange(event => {
+      if (!active) return
+      if (event.state === 'listening') setVoiceState('listening')
+      else if (event.state === 'processing') setVoiceState('processing')
+    }))
+    track(onSttError(error => {
+      if (!active) return
+      voiceAutoSendRef.current = false
+      setVoiceAutoSend(false)
+      setVoiceState('idle')
+      setVoiceInterim('')
+      setRecordSeconds(0)
+      if (error.code !== 'CANCELLED') setControlError(error.code === 'NO_SPEECH' ? 'No speech was detected. Try again when you are ready.' : error.message || 'Voice input could not start.')
+    }))
+    return () => { active = false; unlistens.forEach(unlisten => unlisten()); void stopSttListening().catch(() => {}) }
+  }, [])
+
+  useEffect(() => {
+    if (voiceState === 'idle') return
+    const tick = () => { if (voiceStartedAtRef.current) setRecordSeconds(Math.floor((performance.now() - voiceStartedAtRef.current) / 1000)) }
+    tick()
+    const timer = window.setInterval(tick, 500)
+    return () => window.clearInterval(timer)
+  }, [voiceState])
+
+  const startVoice = async (autoSend = false) => {
+    if (voiceState !== 'idle' || sending) return
+    setControlError('')
+    setVoiceInterim('')
+    setVoiceState('starting')
+    try {
+      const permission = await requestSttPermission()
+      if (permission.microphone !== 'granted') throw new Error('Microphone permission is required. Allow Hermes Mobile to use your microphone, then try again.')
+      const availability = await sttIsAvailable()
+      if (!availability.available) throw new Error(availability.reason || 'Speech recognition is not available on this device.')
+      voiceDiscardRef.current = false
+      voiceAutoSendRef.current = autoSend
+      setVoiceAutoSend(autoSend)
+      voiceStartedAtRef.current = performance.now()
+      setRecordSeconds(0)
+      await startSttListening({ language: navigator.language || 'en-US', interimResults: true, continuous: false, maxDuration: 45_000 })
     } catch (reason) {
-      const errorName = reason instanceof DOMException ? reason.name : ''
-      if (errorName === 'NotFoundError') {
-        setControlError('No microphone detected. Connect your headset, then tap the mic again.')
-      } else if (errorName === 'NotAllowedError' || errorName === 'SecurityError') {
-        try { await invoke('open_microphone_settings') } catch { /* Browser permission may still be re-requested on the next tap. */ }
-        setControlError('Microphone access is blocked. Allow Hermes Mobile in system settings, then tap the mic again.')
-      } else {
-        setControlError('Microphone access could not start. Check your headset and try again.')
-      }
+      voiceAutoSendRef.current = false
+      setVoiceAutoSend(false)
+      setVoiceState('idle')
+      setRecordSeconds(0)
+      setControlError(reason instanceof Error ? reason.message : 'Voice input could not start. Try again.')
     }
+  }
+  const finishVoice = async (discard = false) => {
+    if (voiceState === 'idle') return
+    voiceDiscardRef.current = discard
+    setVoiceState('processing')
+    try { await stopSttListening() }
+    catch (reason) {
+      voiceAutoSendRef.current = false
+      setVoiceAutoSend(false)
+      setVoiceState('idle')
+      setRecordSeconds(0)
+      if (!discard) setControlError(reason instanceof Error ? reason.message : 'Voice input could not stop.')
+    }
+  }
+  const onMicPointerDown = () => {
+    if (draft || sending || voiceState !== 'idle') return
+    holdTimerRef.current = window.setTimeout(() => { ignoreMicClickRef.current = true; void startVoice(true) }, VOICE_AUTOSEND_HOLD_MS)
+  }
+  const onMicPointerUp = () => {
+    if (holdTimerRef.current) { window.clearTimeout(holdTimerRef.current); holdTimerRef.current = null }
+    if (ignoreMicClickRef.current) void finishVoice()
+  }
+  const onMicClick = () => {
+    if (ignoreMicClickRef.current) { ignoreMicClickRef.current = false; return }
+    void startVoice(false)
   }
   const chooseSlash = (item: SlashCompletion) => {
     if (slashStart < 0) return
@@ -291,7 +357,6 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
       return
     }
   }
-  const stopRecording = () => { recorder?.stop(); setRecorder(null) }
   const uploadAttachment = async (file: File, id: string) => {
     try {
       if (file.size > maxAttachmentBytes) throw new Error(`Files must be 50 MB or smaller (${file.name} is ${formatFileSize(file.size)}).`)
@@ -331,7 +396,7 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
     if (uploading) { setControlError('Wait for the file upload to finish, then send it to Hermes.'); return }
     const ready = attachments.filter((item): item is PendingAttachment & { refText: string } => item.status === 'ready' && Boolean(item.refText))
     if (!draft.trim() && !ready.length) return
-    if (await submit(ready.map(item => ({ name: item.name, refText: item.refText })))) setAttachments([])
+    if (await submit(ready.map(item => ({ name: item.name, refText: item.refText })))) { setAttachments([]); setVoiceReview('') }
   }
   const editMessage = (text: string) => { setDraft(text); requestAnimationFrame(() => textareaRef.current?.focus()) }
 
@@ -370,17 +435,18 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
     {reasoningMenu && <section className="reasoning-popover"><small className="popover-label">Reasoning effort</small>{reasoningChoices.map(item => <button className={item === reasoning ? 'selected' : ''} key={item} onClick={() => void chooseReasoning(item)}><span>{labelReasoning(item)}</span>{item === reasoning && <span>✓</span>}</button>)}</section>}
 
     <footer className="chat-dock">
-      {recorder ? <div className="recording-composer"><button onClick={stopRecording}><X size={18}/></button><span><i/>0:{String(recordSeconds).padStart(2, '0')}</span><div className="voice-bars">▂▅▃▇▂▆▃▅▂▇</div><button className="composer-send" onClick={stopRecording}><ArrowUp size={16}/></button></div> : <div className={`ai-composer ${draggingFiles ? 'file-drop-active' : ''}`}>
+      {voiceState !== 'idle' ? <div className={`recording-composer ${voiceAutoSend ? 'voice-autosend' : ''}`}><button onClick={() => void finishVoice(true)} aria-label="Cancel voice input"><X size={18}/></button>{voiceAutoSend && <small className="voice-autosend-label">Auto-send</small>}<span><i/>0:{String(recordSeconds).padStart(2, '0')}</span><div className="voice-bars">{voiceState === 'processing' ? 'Transcribing your voice…' : voiceInterim || (voiceAutoSend ? 'Release to send' : 'Listening…')}</div><button className="composer-send" onClick={() => void finishVoice()} aria-label="Finish voice input"><ArrowUp size={16}/></button></div> : <div className={`ai-composer ${draggingFiles ? 'file-drop-active' : ''}`}>
         {draggingFiles && <div className="file-drop-hint"><Paperclip size={15}/><span>Drop files to send to Hermes</span></div>}
         {!!attachments.length && <div className="attachment-list" aria-label="Attached files">{attachments.map(item => <div className={`attachment-chip ${item.status}`} key={item.id}><FileText size={15}/><span><b>{item.name}</b><small>{item.error || (item.status === 'uploading' ? 'Uploading to Hermes…' : formatFileSize(item.size))}</small></span>{item.status === 'uploading' ? <LoaderCircle className="attachment-spinner" size={14}/> : item.status === 'ready' ? <Check size={14}/> : <span className="attachment-failed">!</span>}<button type="button" onClick={() => setAttachments(items => items.filter(current => current.id !== item.id))} aria-label={`Remove ${item.name}`}><Trash2 size={13}/></button></div>)}</div>}
-        <textarea ref={textareaRef} value={draft} disabled={sending || transcribing} rows={1} placeholder={transcribing ? 'Transcribing…' : 'Ask anything…  /commands'} onChange={event => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown}/>
+        {voiceReview && <div className="voice-review" aria-label="Voice transcription ready to edit"><Mic size={15}/><span><b>Voice transcription</b><small>Edit before sending</small></span><button type="button" onClick={() => { setVoiceReview(''); setDraft('') }} aria-label="Discard voice transcription"><X size={14}/></button></div>}
+        <textarea ref={textareaRef} value={draft} disabled={sending || voiceState !== 'idle'} rows={1} placeholder="Ask anything…  /commands" onChange={event => setDraft(event.target.value)} onKeyDown={handleComposerKeyDown}/>
         <div className="composer-toolbar">
           <input ref={fileInputRef} className="attachment-input" type="file" multiple onChange={onFileInput} aria-label="Choose files to attach"/>
-          <button className={`composer-icon ${attachments.length ? 'attachment-active' : ''}`} disabled={sending || transcribing} title="Attach files" onClick={() => fileInputRef.current?.click()} aria-label="Attach files"><Paperclip size={17}/></button>
+          <button className={`composer-icon ${attachments.length ? 'attachment-active' : ''}`} disabled={sending || voiceState !== 'idle'} title="Attach files" onClick={() => fileInputRef.current?.click()} aria-label="Attach files"><Paperclip size={17}/></button>
           <button className="composer-selector" onClick={() => { setModelMenu(value => !value); setReasoningMenu(false) }}><span>{model || 'Default model'}</span><ChevronDown size={13}/></button>
           <button className="composer-selector effort" onClick={() => { setReasoningMenu(value => !value); setModelMenu(false) }}><BrainCircuit size={14}/><span>{labelReasoning(reasoning)}</span><ChevronDown size={13}/></button>
           <span className="toolbar-spacer"/>
-          {!draft && !sending && <button className="composer-icon" disabled={transcribing} onClick={() => void startRecording()} aria-label="Record voice"><Mic size={17}/></button>}
+          {!draft && !sending && <button className="composer-icon voice-trigger" disabled={voiceState !== 'idle'} title="Tap to dictate. Hold for 2.5 seconds to dictate and send." onPointerDown={onMicPointerDown} onPointerUp={onMicPointerUp} onPointerCancel={onMicPointerUp} onClick={onMicClick} aria-label="Record voice. Hold for 2.5 seconds to auto-send"><Mic size={17}/></button>}
           {sending ? <button className="composer-send stop" onClick={stop} aria-label="Stop Hermes"><Square size={12} fill="currentColor"/></button> : <button className="composer-send" disabled={!draft.trim() && !attachments.some(item => item.status === 'ready')} onClick={() => void submitWithAttachments()} aria-label="Send message"><ArrowUp size={17}/></button>}
         </div>
       </div>}

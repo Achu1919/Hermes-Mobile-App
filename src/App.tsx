@@ -222,13 +222,13 @@ export default function App() {
     })()
   }
 
-  const submit = async (attachmentRefs: { name: string; refText: string }[] = []): Promise<boolean> => {
+  const submit = async (attachmentRefs: { name: string; refText: string }[] = [], voiceText?: string): Promise<boolean> => {
     if (!selected || sending) return false
-    const text = draft.trim()
+    const text = (voiceText ?? draft).trim()
     if (!text && !attachmentRefs.length) return false
     const prompt = buildAttachmentPrompt(text, attachmentRefs)
     let completionUsage: LiveUsage | undefined
-    setDraft('')
+    if (voiceText === undefined) setDraft('')
     setError('')
     setSending(true)
     setStreaming('')
@@ -317,7 +317,7 @@ export default function App() {
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={connectionStatus === 'connected'} endpoint={activeEndpoint !== 'http://127.0.0.1:9119' ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()} onPairingBusy={setPairingBusyState} onPaired={async endpoint => { const normalized = activateEndpoint(endpoint); const data = await refresh(normalized, true); if (!data) throw new Error(lastConnectionErrorRef.current || 'Signed in, but authenticated Hermes REST or live WebSocket verification failed.'); localStorage.setItem('hermes-mobile-active-endpoint', normalized) }}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
-  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} stop={() => void stop()}/>
+  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} submitVoice={text => submit([], text)} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
 
   return <main className="app roster-shell">
