@@ -10,15 +10,15 @@ import { ConnectionSettings } from './components/ConnectionSettings'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { flushSync } from 'react-dom'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
-import { appendCompletedAssistantMessage } from './chat-reconciliation'
-import { isActiveChatTurn } from './chat-turn'
 import { buildBotRows, resolveCanonicalSessionId } from './live-model'
+import { settleAssistantResponse, type SettledAssistantResponse as SettledAssistantState } from './settled-assistant'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
 type Tab = 'bots' | 'sessions' | 'tasks'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; shape: string }
 type Theme = 'dark' | 'light' | 'grey' | 'aurora'
+type SettledAssistantResponse = { sessionId: string; profile: string; content: string; usage?: LiveUsage }
 export type ToolActivity = { id: string; name: string; status: 'running' | 'done' | 'failed'; duration_s?: number; summary?: string }
 
 const titleize = (value: string) => value.split(/[-_]+/).filter(Boolean).map(part => part[0].toUpperCase() + part.slice(1)).join(' ')
@@ -45,9 +45,6 @@ export default function App() {
   const [profiles, setProfiles] = useState<LiveProfile[]>([])
   const [sessions, setSessions] = useState<LiveSession[]>([])
   const [selected, setSelected] = useState<LiveSession | null>(null)
-  const selectedRef = useRef<LiveSession | null>(selected)
-  selectedRef.current = selected
-  const chatTurnGenerationRef = useRef(0)
   const [conversationLoading, setConversationLoading] = useState(false)
   const sessionLoadRef = useRef(0)
   const [profileSheet, setProfileSheet] = useState(false)
@@ -65,6 +62,7 @@ export default function App() {
   const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected'>('checking')
   const lastConnectionErrorRef = useRef('')
   const [streaming, setStreaming] = useState('')
+  const [settledAssistant, setSettledAssistant] = useState<SettledAssistantState | null>(null)
   const [sending, setSending] = useState(false)
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([])
   const [query, setQuery] = useState('')
@@ -201,62 +199,59 @@ export default function App() {
 
   const openSession = (session: LiveSession, latestUsage?: LiveUsage): Promise<void> => {
     const requestId = ++sessionLoadRef.current
-    const turnId = ++chatTurnGenerationRef.current
     const startedAt = performance.now()
     flushSync(() => {
       setSelected(session)
       setProfileSheet(false)
       setMessages([])
+      setSettledAssistant(null)
       setError('')
-      setSending(false)
-      setStreaming('')
-      setToolActivities([])
       setConversationLoading(true)
     })
     return (async () => {
       try {
         const loaded = await loadMessages(session.id, session.profile)
-        if (requestId !== sessionLoadRef.current || turnId !== chatTurnGenerationRef.current) return
+        if (requestId !== sessionLoadRef.current) return
         const latestAssistant = latestUsage ? [...loaded].reverse().findIndex(message => message.role === 'assistant') : -1
         setMessages(latestAssistant >= 0 ? loaded.map((message, index) => index === loaded.length - latestAssistant - 1 ? { ...message, usage: latestUsage } : message) : loaded)
       }
       catch (reason) {
-        if (requestId === sessionLoadRef.current && turnId === chatTurnGenerationRef.current) setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.')
+        if (requestId === sessionLoadRef.current) setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.')
       }
       finally {
         const remaining = Math.max(0, 700 - (performance.now() - startedAt))
         if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining))
-        if (requestId === sessionLoadRef.current && turnId === chatTurnGenerationRef.current) setConversationLoading(false)
+        if (requestId === sessionLoadRef.current) setConversationLoading(false)
       }
     })()
   }
 
   const submit = async (attachmentRefs: { name: string; refText: string }[] = [], voiceText?: string): Promise<boolean> => {
     if (!selected || sending) return false
-    const turnId = ++chatTurnGenerationRef.current
-    const turnSession = { id: selected.id, profile: selected.profile }
-    const isCurrentTurn = () => isActiveChatTurn(turnId, chatTurnGenerationRef.current, turnSession, selectedRef.current)
     const text = (voiceText ?? draft).trim()
     if (!text && !attachmentRefs.length) return false
     const prompt = buildAttachmentPrompt(text, attachmentRefs)
     let completionUsage: LiveUsage | undefined
-    let streamedText = ''
+    let finalText = ''
+    const priorSettled = settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null
+    const priorAssistantMessage = priorSettled ? { id: -(Date.now() + 1), role: 'assistant' as const, content: priorSettled.content, usage: priorSettled.usage } : null
+    const localUserMessage = { id: -Date.now(), role: 'user' as const, content: attachmentSummary(text, attachmentRefs) }
     if (voiceText === undefined) setDraft('')
+    setSettledAssistant(null)
     setError('')
     setSending(true)
     setStreaming('')
     setToolActivities([])
-    setMessages(items => [...items, { id: -Date.now(), role: 'user', content: attachmentSummary(text, attachmentRefs) }])
+    setMessages(items => [...items, ...(priorAssistantMessage ? [priorAssistantMessage] : []), localUserMessage])
     try {
       await connectAndSubmit(selected.id, selected.profile, prompt, (type, payload) => {
-        if (!isCurrentTurn()) return
         if (type === 'message.delta') {
-          streamedText += String(payload.text || '')
-          setStreaming(streamedText)
+          finalText += String(payload.text || '')
+          setStreaming(finalText)
         }
         if (type === 'message.complete') {
-          streamedText = String(payload.text || streamedText)
-          setStreaming(streamedText)
+          finalText = String(payload.text || finalText)
+          setStreaming(finalText)
           completionUsage = payload.usage && typeof payload.usage === 'object' ? payload.usage as LiveUsage : undefined
         }
         if (type === 'tool.start') setToolActivities(items => {
@@ -269,9 +264,10 @@ export default function App() {
         })
         if (type === 'error') setError(String(payload.message || 'Hermes could not complete that request.'))
       })
-      if (!isCurrentTurn()) return false
-      if (streamedText.trim()) {
-        setMessages(items => appendCompletedAssistantMessage(items, streamedText, completionUsage))
+      const terminalAssistant = settleAssistantResponse(selected.id, selected.profile, finalText, completionUsage)
+      if (terminalAssistant) {
+        setSettledAssistant(terminalAssistant)
+        setSending(false)
         setStreaming('')
       } else {
         await openSession(selected, completionUsage)
@@ -279,13 +275,11 @@ export default function App() {
       await refresh()
       return true
     } catch (reason) {
-      if (isCurrentTurn()) setError(reason instanceof Error ? reason.message : 'Could not send to Hermes.')
+      setError(reason instanceof Error ? reason.message : 'Could not send to Hermes.')
       return false
     } finally {
-      if (isCurrentTurn()) {
-        setSending(false)
-        setStreaming('')
-      }
+      setSending(false)
+      setStreaming('')
     }
   }
 
@@ -343,7 +337,7 @@ export default function App() {
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={connectionStatus === 'connected'} endpoint={activeEndpoint !== 'http://127.0.0.1:9119' ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => void refresh()} onPairingBusy={setPairingBusyState} onPaired={async endpoint => { const normalized = activateEndpoint(endpoint); const data = await refresh(normalized, true); if (!data) throw new Error(lastConnectionErrorRef.current || 'Signed in, but authenticated Hermes REST or live WebSocket verification failed.'); localStorage.setItem('hermes-mobile-active-endpoint', normalized) }}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
-  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} submitVoice={text => submit([], text)} stop={() => void stop()}/>
+  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} settledAssistant={settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} submitVoice={text => submit([], text)} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
 
   return <main className="app roster-shell">

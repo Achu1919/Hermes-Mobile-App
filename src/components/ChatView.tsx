@@ -3,11 +3,12 @@ import { ArrowDown, ArrowUp, BrainCircuit, Check, ChevronDown, FileText, LoaderC
 import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react'
 
 import { onError as onSttError, onResult as onSttResult, onStateChange as onSttStateChange, isAvailable as sttIsAvailable, requestPermission as requestSttPermission, startListening as startSttListening, stopListening as stopSttListening } from 'tauri-plugin-stt-api'
-import { attachFile, completeSlash, loadModelOptions, setSessionModel, setSessionReasoning, type LiveMessage, type LiveProfile, type LiveSession, type ModelOptions, type SlashCompletion } from '../hermes'
+import { attachFile, completeSlash, loadModelOptions, setSessionModel, setSessionReasoning, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage, type ModelOptions, type SlashCompletion } from '../hermes'
 import { BotAvatar } from './BotAvatar'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
 import type { ToolActivity } from '../App'
 import { applySlashCompletion } from '../slash-routing'
+import { formatResponseStats } from '../message-stats'
 import { isExpectedVoiceCleanupError, VOICE_AUTOSEND_HOLD_MS } from '../voice-input'
 
 type Timeline = LiveMessage & { local?: boolean }
@@ -23,6 +24,7 @@ type Props = {
   session: LiveSession
   conversationLoading: boolean
   messages: Timeline[]
+  settledAssistant: { content: string; usage?: LiveUsage } | null
   profiles: LiveProfile[]
   draft: string
   setDraft: (text: string) => void
@@ -55,7 +57,7 @@ const attachmentId = (file: File) => `${file.name}:${file.size}:${file.lastModif
 const formatFileSize = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`
 const maxAttachmentBytes = 50 * 1024 * 1024
 
-export function ChatView({ session, conversationLoading, messages, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, openProfile, onSessionModelChange, submit, submitVoice, stop }: Props) {
+export function ChatView({ session, conversationLoading, messages, settledAssistant, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, openProfile, onSessionModelChange, submit, submitVoice, stop }: Props) {
   const threadRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -105,8 +107,11 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
   const allModels = useMemo(() => (modelOptions.providers || []).flatMap(item => (item.featured_models?.length ? item.featured_models : item.models || []).map(name => ({ name, provider: item.slug, providerName: item.name, authenticated: item.authenticated !== false }))).filter((item, index, rows) => rows.findIndex(other => other.provider === item.provider && other.name === item.name) === index), [modelOptions])
   const filteredModels = useMemo(() => allModels.filter(item => `${item.name} ${item.providerName}`.toLowerCase().includes(modelSearch.toLowerCase())), [allModels, modelSearch])
   const visibleError = error || controlError
+  const activeAssistantText = settledAssistant?.content || streaming
+  const settledStats = settledAssistant ? formatResponseStats({ id: -1, role: 'assistant', content: settledAssistant.content, usage: settledAssistant.usage }) : null
+  const showActiveAssistant = sending || Boolean(settledAssistant)
   const showConversationLoading = conversationLoading
-  const showEmptyState = !conversationLoading && !messages.length && !sending && !streaming && !toolActivities.length && !visibleError
+  const showEmptyState = !conversationLoading && !messages.length && !showActiveAssistant && !streaming && !toolActivities.length && !visibleError
 
   const scrollToLatest = (behavior: ScrollBehavior = 'smooth') => {
     const thread = threadRef.current
@@ -447,7 +452,7 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
         {showEmptyState && <section className="chat-empty-state" aria-label={`Start a conversation with ${botName}`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="welcome"/><h1>{botName.toUpperCase()}</h1><p>Say something to get started.</p></section>}
         {messages.map(message => <MessageCard key={message.id} message={message} onEdit={editMessage} profile={botProfile} fallbackName={session.profile} revealTimestamp={message.role === 'assistant' && revealedTimestampId === message.id} onRevealTimestamp={() => setRevealedTimestampId(current => current === message.id ? null : message.id)}/>)}
         {toolActivities.map(activity => <ToolActivityRow activity={activity} key={activity.id}/>)}
-        {sending && <article className="message-row assistant-row live-response"><div className="assistant-message-layout"><BotAvatar profile={botProfile} fallbackName={session.profile} variant="message"/><div className="assistant-message-content"><div className="live-label"><span className="stream-pulse"/> {streaming ? 'Responding' : 'Thinking'}</div>{streaming && <MarkdownContent>{streaming}</MarkdownContent>}<div className="response-stats response-stats-placeholder" aria-hidden="true">&nbsp;</div></div></div></article>}
+        {showActiveAssistant && <article className="message-row assistant-row live-response"><div className="assistant-message-layout"><BotAvatar profile={botProfile} fallbackName={session.profile} variant="message"/><div className="assistant-message-content"><div className={`live-label ${settledAssistant ? 'live-label-placeholder' : ''}`} aria-hidden={Boolean(settledAssistant)}><span className="stream-pulse"/> {streaming ? 'Responding' : 'Thinking'}</div>{activeAssistantText && <MarkdownContent>{activeAssistantText}</MarkdownContent>}<div className={`response-stats ${settledStats ? '' : 'response-stats-placeholder'}`} aria-label={settledStats ? 'Response generation statistics' : undefined} aria-hidden={settledStats ? undefined : true}>{settledStats || '\u00a0'}</div></div></div></article>}
       </div>
     </div>
 
