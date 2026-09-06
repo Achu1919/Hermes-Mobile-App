@@ -7,6 +7,7 @@ import { BotAppearancePicker } from './components/BotAppearancePicker'
 import { BotProfileSheet } from './components/BotProfileSheet'
 import { TasksView } from './components/TasksView'
 import { ConnectionSettings } from './components/ConnectionSettings'
+import { flushSync } from 'react-dom'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
 import { buildBotRows } from './live-model'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
@@ -175,28 +176,32 @@ export default function App() {
   const visibleSessions = useMemo(() => sessions.filter(session => `${session.title} ${session.profile} ${session.preview}`.toLowerCase().includes(query.toLowerCase())), [sessions, query])
   const mentions = useMemo(() => profiles.filter(profile => (`@${profile.name}`).includes((draft.match(/@[\w-]*$/)?.[0] || '').toLowerCase())), [profiles, draft])
 
-  const openSession = async (session: LiveSession, latestUsage?: LiveUsage) => {
+  const openSession = (session: LiveSession, latestUsage?: LiveUsage): Promise<void> => {
     const requestId = ++sessionLoadRef.current
     const startedAt = performance.now()
-    setSelected(session)
-    setProfileSheet(false)
-    setMessages([])
-    setError('')
-    setConversationLoading(true)
-    try {
-      const loaded = await loadMessages(session.id, session.profile)
-      if (requestId !== sessionLoadRef.current) return
-      const latestAssistant = latestUsage ? [...loaded].reverse().findIndex(message => message.role === 'assistant') : -1
-      setMessages(latestAssistant >= 0 ? loaded.map((message, index) => index === loaded.length - latestAssistant - 1 ? { ...message, usage: latestUsage } : message) : loaded)
-    }
-    catch (reason) {
-      if (requestId === sessionLoadRef.current) setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.')
-    }
-    finally {
-      const remaining = Math.max(0, 700 - (performance.now() - startedAt))
-      if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining))
-      if (requestId === sessionLoadRef.current) setConversationLoading(false)
-    }
+    flushSync(() => {
+      setSelected(session)
+      setProfileSheet(false)
+      setMessages([])
+      setError('')
+      setConversationLoading(true)
+    })
+    return (async () => {
+      try {
+        const loaded = await loadMessages(session.id, session.profile)
+        if (requestId !== sessionLoadRef.current) return
+        const latestAssistant = latestUsage ? [...loaded].reverse().findIndex(message => message.role === 'assistant') : -1
+        setMessages(latestAssistant >= 0 ? loaded.map((message, index) => index === loaded.length - latestAssistant - 1 ? { ...message, usage: latestUsage } : message) : loaded)
+      }
+      catch (reason) {
+        if (requestId === sessionLoadRef.current) setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.')
+      }
+      finally {
+        const remaining = Math.max(0, 700 - (performance.now() - startedAt))
+        if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining))
+        if (requestId === sessionLoadRef.current) setConversationLoading(false)
+      }
+    })()
   }
 
   const submit = async (attachmentRefs: { name: string; refText: string }[] = []): Promise<boolean> => {
