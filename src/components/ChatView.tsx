@@ -76,6 +76,9 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
   const [transcribing, setTranscribing] = useState(false)
   const [attachments, setAttachments] = useState<PendingAttachment[]>([])
   const [draggingFiles, setDraggingFiles] = useState(false)
+  const [pullDistance, setPullDistance] = useState(0)
+  const [pullRefreshing, setPullRefreshing] = useState(false)
+  const pullStartRef = useRef<number | null>(null)
   const [slashItems, setSlashItems] = useState<SlashCompletion[]>([])
   const [slashReplaceFrom, setSlashReplaceFrom] = useState(1)
   const [slashIndex, setSlashIndex] = useState(0)
@@ -196,6 +199,26 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
     if (nearEnd) setUnreadBelow(0)
   }
 
+  const pullRefresh = async () => {
+    setPullRefreshing(true)
+    try { await Promise.resolve(refresh()) } finally { window.setTimeout(() => setPullRefreshing(false), 180) }
+  }
+  const onThreadTouchStart = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (threadRef.current?.scrollTop === 0) pullStartRef.current = event.touches[0].clientY
+  }
+  const onThreadTouchMove = (event: React.TouchEvent<HTMLDivElement>) => {
+    if (pullStartRef.current == null || threadRef.current?.scrollTop !== 0) return
+    const distance = Math.min(64, Math.max(0, event.touches[0].clientY - pullStartRef.current))
+    if (distance > 0) event.preventDefault()
+    setPullDistance(distance)
+  }
+  const onThreadTouchEnd = () => {
+    const shouldRefresh = pullDistance >= 48
+    pullStartRef.current = null
+    setPullDistance(0)
+    if (shouldRefresh && !pullRefreshing) void pullRefresh()
+  }
+
   const chooseModel = async (nextProvider: string, nextModel: string) => {
     setControlError('')
     try {
@@ -267,10 +290,6 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
       chooseSlash(slashItems[slashIndex] || slashItems[0])
       return
     }
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault()
-      void submitWithAttachments()
-    }
   }
   const stopRecording = () => { recorder?.stop(); setRecorder(null) }
   const uploadAttachment = async (file: File, id: string) => {
@@ -326,8 +345,9 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
 
     {visibleError && <div className="chat-error"><span>{visibleError}</span><button onClick={() => setControlError('')}><X size={14}/></button></div>}
 
-    <div className="thread-scroll" ref={threadRef} onScroll={onScroll}>
+    <div className="thread-scroll" ref={threadRef} onScroll={onScroll} onTouchStart={onThreadTouchStart} onTouchMove={onThreadTouchMove} onTouchEnd={onThreadTouchEnd}>
       <div className="thread-content" ref={contentRef}>
+        {(pullDistance > 8 || pullRefreshing) && <div className="chat-pull-cue" style={{ height: `${pullRefreshing ? 34 : pullDistance}px` }}><RotateCw size={14} className={pullRefreshing ? 'pull-refresh-spinner' : ''}/><span>{pullRefreshing ? 'Refreshing…' : pullDistance >= 48 ? 'Release to refresh' : 'Pull to refresh'}</span></div>}
         {showConversationLoading && <section className="chat-empty-state conversation-loading" aria-live="polite" aria-label={`Loading ${botName} conversation`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="welcome"/><h1>{botName.toUpperCase()}</h1><p>{botName} · {model || 'Hermes Desktop'}</p><LoadingSpinner/></section>}
         {showEmptyState && <section className="chat-empty-state" aria-label={`Start a conversation with ${botName}`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="welcome"/><h1>{botName.toUpperCase()}</h1><p>Say something to get started.</p></section>}
         {messages.map(message => <MessageCard key={message.id} message={message} onEdit={editMessage} profile={botProfile} fallbackName={session.profile} revealTimestamp={message.role === 'assistant' && revealedTimestampId === message.id} onRevealTimestamp={() => setRevealedTimestampId(current => current === message.id ? null : message.id)}/>)}
@@ -343,7 +363,7 @@ export function ChatView({ session, conversationLoading, messages, profiles, dra
 
     {(modelMenu || reasoningMenu) && <button className="popover-scrim" aria-label="Close menu" onClick={() => { setModelMenu(false); setReasoningMenu(false) }}/>} 
     {modelMenu && <section className="model-popover">
-      <div className="model-search"><Search size={14}/><input autoFocus value={modelSearch} onChange={event => setModelSearch(event.target.value)} placeholder="Search models"/></div>
+      <div className="model-search"><Search size={14}/><input value={modelSearch} onChange={event => setModelSearch(event.target.value)} placeholder="Search models"/></div>
       <small className="popover-label">Available models</small>
       <div className="model-list">{filteredModels.length ? filteredModels.map(item => <button className={item.name === model && item.provider === provider ? 'selected' : ''} disabled={!item.authenticated} key={`${item.provider}:${item.name}`} onClick={() => void chooseModel(item.provider, item.name)}><span><b>{item.name}</b><small>{item.providerName}</small></span>{item.name === model && item.provider === provider && <span>✓</span>}</button>) : <p>No configured models match.</p>}</div>
     </section>}

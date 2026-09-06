@@ -154,17 +154,6 @@ function PairingSettings({ back, onPaired, onPairingBusy, initialEndpoint }: { b
       <button className="secondary" onClick={() => void copyChecklist()}>{copied ? <CheckCircle2 size={16}/> : <Copy size={16}/>} {copied ? 'Setup copied' : 'Copy setup checklist'}</button>
       <a {...external('https://hermes-agent.nousresearch.com/docs/user-guide/multi-connection-desktop')}><ExternalLink size={16}/> Gateway connection guide</a>
     </section>
-    <section className="lan-sharing">
-      <div className="lan-sharing-head"><Wifi size={18}/><div><span>ADVANCED ALTERNATIVE</span><h3>LAN sharing on the same Wi‑Fi</h3></div></div>
-      <p>Yes—when your phone and Windows PC are on the same trusted home network, Hermes can use a LAN remote gateway instead of Tailscale. This is convenient for couch use, but it needs the same real gateway authentication.</p>
-      <ol>
-        <li><b>Use a private home network.</b> Keep both devices on the same Wi‑Fi. Do not use guest Wi‑Fi, public hotspots, or networks with client isolation.</li>
-        <li><b>Publish an authenticated Hermes gateway.</b> Bind Hermes to the Windows PC’s private LAN interface and allow the port only from your local subnet in Windows Firewall. Hermes requires password or OAuth authentication on a non-loopback address.</li>
-        <li><b>Enter the private gateway URL above, then test it.</b> A LAN URL looks like <code>http://192.168.1.x:9119</code> or your private HTTPS hostname. The Test gateway action checks Hermes’ actual status before sign-in.</li>
-        <li><b>Sign in inside Hermes Mobile.</b> Mobile uses Hermes’ native PKCE/token exchange without opening a browser, stores the revocable credential in Android secure storage, and then verifies authenticated REST plus live WebSocket access.</li>
-      </ol>
-      <p className="lan-sharing-note"><LockKeyhole size={14}/> A custom pairing code is intentionally not used: Hermes does not expose a mobile device-PIN endpoint, and a client-generated PIN would not prove identity to the host. The supported Hermes username/password exchange issues revocable tokens instead.</p>
-    </section>
     <p className="pairing-disclosure">Hermes Mobile verifies reachability first, exchanges your gateway credentials for revocable Hermes tokens inside the native app, stores tokens in OS-backed secure storage, and marks the host connected only after REST and WebSocket verification.</p>
   </main>
 }
