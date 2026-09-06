@@ -11,6 +11,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { flushSync } from 'react-dom'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
 import { appendCompletedAssistantMessage } from './chat-reconciliation'
+import { isActiveChatTurn } from './chat-turn'
 import { buildBotRows, resolveCanonicalSessionId } from './live-model'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
@@ -44,6 +45,9 @@ export default function App() {
   const [profiles, setProfiles] = useState<LiveProfile[]>([])
   const [sessions, setSessions] = useState<LiveSession[]>([])
   const [selected, setSelected] = useState<LiveSession | null>(null)
+  const selectedRef = useRef<LiveSession | null>(selected)
+  selectedRef.current = selected
+  const chatTurnGenerationRef = useRef(0)
   const [conversationLoading, setConversationLoading] = useState(false)
   const sessionLoadRef = useRef(0)
   const [profileSheet, setProfileSheet] = useState(false)
@@ -197,34 +201,41 @@ export default function App() {
 
   const openSession = (session: LiveSession, latestUsage?: LiveUsage): Promise<void> => {
     const requestId = ++sessionLoadRef.current
+    const turnId = ++chatTurnGenerationRef.current
     const startedAt = performance.now()
     flushSync(() => {
       setSelected(session)
       setProfileSheet(false)
       setMessages([])
       setError('')
+      setSending(false)
+      setStreaming('')
+      setToolActivities([])
       setConversationLoading(true)
     })
     return (async () => {
       try {
         const loaded = await loadMessages(session.id, session.profile)
-        if (requestId !== sessionLoadRef.current) return
+        if (requestId !== sessionLoadRef.current || turnId !== chatTurnGenerationRef.current) return
         const latestAssistant = latestUsage ? [...loaded].reverse().findIndex(message => message.role === 'assistant') : -1
         setMessages(latestAssistant >= 0 ? loaded.map((message, index) => index === loaded.length - latestAssistant - 1 ? { ...message, usage: latestUsage } : message) : loaded)
       }
       catch (reason) {
-        if (requestId === sessionLoadRef.current) setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.')
+        if (requestId === sessionLoadRef.current && turnId === chatTurnGenerationRef.current) setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.')
       }
       finally {
         const remaining = Math.max(0, 700 - (performance.now() - startedAt))
         if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining))
-        if (requestId === sessionLoadRef.current) setConversationLoading(false)
+        if (requestId === sessionLoadRef.current && turnId === chatTurnGenerationRef.current) setConversationLoading(false)
       }
     })()
   }
 
   const submit = async (attachmentRefs: { name: string; refText: string }[] = [], voiceText?: string): Promise<boolean> => {
     if (!selected || sending) return false
+    const turnId = ++chatTurnGenerationRef.current
+    const turnSession = { id: selected.id, profile: selected.profile }
+    const isCurrentTurn = () => isActiveChatTurn(turnId, chatTurnGenerationRef.current, turnSession, selectedRef.current)
     const text = (voiceText ?? draft).trim()
     if (!text && !attachmentRefs.length) return false
     const prompt = buildAttachmentPrompt(text, attachmentRefs)
@@ -238,6 +249,7 @@ export default function App() {
     setMessages(items => [...items, { id: -Date.now(), role: 'user', content: attachmentSummary(text, attachmentRefs) }])
     try {
       await connectAndSubmit(selected.id, selected.profile, prompt, (type, payload) => {
+        if (!isCurrentTurn()) return
         if (type === 'message.delta') {
           streamedText += String(payload.text || '')
           setStreaming(streamedText)
@@ -257,6 +269,7 @@ export default function App() {
         })
         if (type === 'error') setError(String(payload.message || 'Hermes could not complete that request.'))
       })
+      if (!isCurrentTurn()) return false
       if (streamedText.trim()) {
         setMessages(items => appendCompletedAssistantMessage(items, streamedText, completionUsage))
         setStreaming('')
@@ -266,11 +279,13 @@ export default function App() {
       await refresh()
       return true
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Could not send to Hermes.')
+      if (isCurrentTurn()) setError(reason instanceof Error ? reason.message : 'Could not send to Hermes.')
       return false
     } finally {
-      setSending(false)
-      setStreaming('')
+      if (isCurrentTurn()) {
+        setSending(false)
+        setStreaming('')
+      }
     }
   }
 
