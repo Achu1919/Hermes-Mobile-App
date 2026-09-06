@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBotRows, durableSessionId } from './live-model'
+import { buildBotRows, resolveCanonicalSessionId } from './live-model'
 
 describe('live Hermes Bot roster', () => {
   it('uses each profile canonical Bot Chat, never its newest unrelated session', () => {
@@ -12,7 +12,7 @@ describe('live Hermes Bot roster', () => {
     expect(rows[1].session?.id).toBe('bot')
   })
 
-  it('uses the durable session key rather than a stale resolved runtime ID for navigation', () => {
-    expect(durableSessionId({ id: 'stored-bot-chat', resolved_id: 'reaped-runtime-42' })).toBe('stored-bot-chat')
+  it('uses the resolved persisted lineage tip for compressed canonical chat navigation', () => {
+    expect(resolveCanonicalSessionId({ id: 'stored-bot-chat', resolved_id: 'lineage-tip-42' })).toBe('lineage-tip-42')
   })
 })

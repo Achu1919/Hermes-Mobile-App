@@ -12,8 +12,8 @@ export type RosterProfile = {
 }
 export type BotRow = { profile: RosterProfile; session: ActivitySession | null }
 
-export function durableSessionId(session: ActivitySession): string {
-  return session.id
+export function resolveCanonicalSessionId(session: ActivitySession): string {
+  return session.resolved_id || session.id
 }
 
 export function buildBotRows(profiles: RosterProfile[]): BotRow[] {
