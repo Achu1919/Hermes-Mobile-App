@@ -83,6 +83,7 @@ export class HermesGatewayClient {
   private readyReject: ((reason: Error) => void) | null = null
   private readonly pending = new Map<number, Pending>()
   private readonly sessionListeners = new Map<string, Set<(event: GatewayEvent) => void>>()
+  private readonly activeTurnCancels = new Map<string, () => void>()
   private globalListener?: (event: GatewayEvent) => void
 
   constructor(
@@ -209,6 +210,7 @@ export class HermesGatewayClient {
       else settle()
     }
     listeners.add(terminalListener)
+    this.activeTurnCancels.set(sessionId, settle)
 
     try {
       // An acknowledgement is not completion. Keep listening until a terminal
@@ -220,6 +222,7 @@ export class HermesGatewayClient {
       ])
     } finally {
       listeners.delete(terminalListener)
+      if (this.activeTurnCancels.get(sessionId) === settle) this.activeTurnCancels.delete(sessionId)
       if (!listeners.size) this.sessionListeners.delete(sessionId)
     }
   }
@@ -233,8 +236,10 @@ export class HermesGatewayClient {
     }, 120_000)
   }
 
-  interruptSession(sessionId: string) {
-    return this.call('session.interrupt', { session_id: sessionId })
+  async interruptSession(sessionId: string) {
+    const result = await this.call('session.interrupt', { session_id: sessionId })
+    this.activeTurnCancels.get(sessionId)?.()
+    return result
   }
 
   setSessionModel(sessionId: string, provider: string, model: string) {
