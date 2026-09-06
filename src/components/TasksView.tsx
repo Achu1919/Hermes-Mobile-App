@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, CalendarClock, ChevronRight, Pause, Pencil, Play, Plus, RefreshCw, Zap } from 'lucide-react'
 
 import { NewTaskSheet } from './NewTaskSheet'
-import { loadCronJobs, loadCronRuns, triggerCronJob, updateCronPrompt, updateCronJob, type CronJob, type CronRun, type LiveProfile } from '../hermes'
+import { loadCronJob, loadCronJobs, loadCronRuns, triggerCronJob, updateCronPrompt, updateCronJob, type CronJob, type CronRun, type LiveProfile } from '../hermes'
 
 type Props = { back: () => void; profiles: LiveProfile[] }
 const jobTitle = (job: CronJob) => (job.name || 'Untitled task').replace(/^\[bot:[^\]]+\]\s*/i, '')
@@ -74,6 +74,11 @@ export function TasksView({ back, profiles }: Props) {
     finally { setBusy('') }
   }
   const trigger = async (job: CronJob) => { setBusy(`${job.job_id}:trigger`); setError(''); try { await triggerCronJob(job.job_id, job.profile); await refresh() } catch (reason) { setError(reason instanceof Error ? reason.message : 'Hermes could not trigger this task.') } finally { setBusy('') } }
+  const openTask = async (job: CronJob) => {
+    setSelected(job)
+    try { setSelected(await loadCronJob(job.job_id, job.profile)) }
+    catch { /* Keep the list payload visible; the full prompt remains available when the gateway supports the detail route. */ }
+  }
   if (selected) return <TaskDetail job={selected} busy={busy} back={() => setSelected(null)} onRefresh={refresh} onToggle={toggle} onTrigger={trigger}/>
   if (createOpen) return <NewTaskSheet profiles={profiles} onClose={() => setCreateOpen(false)} onCreated={refresh}/>
   const showRunning = filter !== 'scheduled' && running.length > 0
@@ -86,7 +91,7 @@ export function TasksView({ back, profiles }: Props) {
     <button className="tasks-running" onClick={() => document.getElementById('running-tasks')?.scrollIntoView({ behavior: 'smooth' })}><Zap size={17}/><span>Running now</span><b>{running.length}</b><ChevronRight size={16}/></button>
     <button className="tasks-stat tasks-scheduled" onClick={() => { setFilter('scheduled'); document.getElementById('scheduled-tasks')?.scrollIntoView({ behavior: 'smooth' }) }}><CalendarClock size={17}/><span>Scheduled</span><b>{scheduled.length}</b><ChevronRight size={16}/></button>
     {error && <p className="management-error">{error}</p>}
-    {loading && !jobs.length ? <p className="management-empty">Loading scheduled tasks…</p> : !jobs.length ? <section className="tasks-empty"><CalendarClock size={28}/><b>No scheduled tasks</b><p>Scheduled jobs created in Hermes Desktop will appear here.</p></section> : <>{showRunning && <TaskSection id="running-tasks" label="Running" jobs={running} busy={busy} onOpen={setSelected} onToggle={toggle} onTrigger={trigger}/>} {showScheduled && <TaskSection id="scheduled-tasks" label="Scheduled jobs" jobs={scheduled} busy={busy} onOpen={setSelected} onToggle={toggle} onTrigger={trigger}/>} {showOther && <TaskSection label="Paused / attention" jobs={visibleJobs.filter(job => stateOf(job) !== 'scheduled')} busy={busy} onOpen={setSelected} onToggle={toggle} onTrigger={trigger}/>}</>}
+    {loading && !jobs.length ? <p className="management-empty">Loading scheduled tasks…</p> : !jobs.length ? <section className="tasks-empty"><CalendarClock size={28}/><b>No scheduled tasks</b><p>Scheduled jobs created in Hermes Desktop will appear here.</p></section> : <>{showRunning && <TaskSection id="running-tasks" label="Running" jobs={running} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>} {showScheduled && <TaskSection id="scheduled-tasks" label="Scheduled jobs" jobs={scheduled} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>} {showOther && <TaskSection label="Paused / attention" jobs={visibleJobs.filter(job => stateOf(job) !== 'scheduled')} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>}</>}
   </main>
 }
 

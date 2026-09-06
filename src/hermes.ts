@@ -219,6 +219,11 @@ export async function loadCronJobs(profile?: string, baseUrl = activeHermes): Pr
   return Array.isArray(result.jobs) ? result.jobs.map(job => ({ ...job, profile: result.scoped || profile || job.profile })) : []
 }
 
+export async function loadCronJob(jobId: string, profile = '', baseUrl = activeHermes): Promise<CronJob> {
+  const raw = await invoke<string>('hermes_cron_job', { baseUrl, jobId, profile })
+  return JSON.parse(raw) as CronJob
+}
+
 export async function loadCronRuns(jobId: string, profile = '', baseUrl = activeHermes): Promise<CronRun[]> {
   const raw = await invoke<string>('hermes_cron_runs', { baseUrl, jobId, profile })
   const result = JSON.parse(raw) as { runs?: CronRun[] }

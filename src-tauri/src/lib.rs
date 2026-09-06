@@ -206,6 +206,18 @@ fn hermes_transcribe(
 }
 
 #[tauri::command]
+fn hermes_cron_job(
+    app: tauri::AppHandle,
+    base_url: String,
+    job_id: String,
+    profile: String,
+) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    let profile_query = if profile.trim().is_empty() { String::new() } else { format!("?profile={}", urlencoding::encode(&profile)) };
+    authenticated_get(&app, &origin, &format!("/api/cron/jobs/{}{}", urlencoding::encode(&job_id), profile_query))
+}
+
+#[tauri::command]
 fn hermes_cron_runs(
     app: tauri::AppHandle,
     base_url: String,
@@ -433,6 +445,7 @@ pub fn run() {
             hermes_model_options,
             hermes_session_messages,
             hermes_transcribe,
+            hermes_cron_job,
             hermes_cron_runs,
             hermes_trigger_cron,
             hermes_update_cron_prompt,
