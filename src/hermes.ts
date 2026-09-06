@@ -215,10 +215,40 @@ export async function installHubSkill(profile: string, name: string, baseUrl = a
   if (result.installed !== true) throw new Error(`Hermes could not install “${name}”.`)
 }
 
-export function normalizeCronJob(job: Partial<CronJob>, profile = ''): CronJob {
-  const jobId = String(job.job_id || job.id || '').trim()
+const cronText = (value: unknown): string | undefined => typeof value === 'string' ? value : typeof value === 'number' ? String(value) : undefined
+const cronScheduleText = (job: Record<string, unknown>): string | undefined => {
+  const explicit = cronText(job.schedule_display)
+  if (explicit) return explicit
+  const schedule = job.schedule
+  if (schedule && typeof schedule === 'object') {
+    const fields = schedule as Record<string, unknown>
+    return cronText(fields.display) || cronText(fields.expr)
+  }
+  return cronText(schedule)
+}
+
+export function normalizeCronJob(job: Partial<CronJob> | Record<string, unknown>, profile = ''): CronJob {
+  const raw = job as Record<string, unknown>
+  const jobId = String(raw.job_id || raw.id || '').trim()
   if (!jobId) throw new Error('Hermes returned task details without a job ID.')
-  return { ...job, job_id: jobId, profile: profile || job.profile }
+  return {
+    job_id: jobId,
+    ...(cronText(raw.id) ? { id: cronText(raw.id) } : {}),
+    ...(cronText(raw.name) ? { name: cronText(raw.name) } : {}),
+    ...(cronText(raw.prompt) ? { prompt: cronText(raw.prompt) } : {}),
+    ...(cronText(raw.prompt_preview) ? { prompt_preview: cronText(raw.prompt_preview) } : {}),
+    ...(cronScheduleText(raw) ? { schedule: cronScheduleText(raw) } : {}),
+    ...(typeof raw.enabled === 'boolean' ? { enabled: raw.enabled } : {}),
+    ...(cronText(raw.state) ? { state: cronText(raw.state) } : {}),
+    ...(cronText(raw.next_run_at) ? { next_run_at: cronText(raw.next_run_at) } : {}),
+    ...(cronText(raw.last_run_at) ? { last_run_at: cronText(raw.last_run_at) } : {}),
+    ...(cronText(raw.last_status) ? { last_status: cronText(raw.last_status) } : {}),
+    ...(cronText(raw.last_error) ? { last_error: cronText(raw.last_error) } : {}),
+    ...(cronText(raw.deliver) ? { deliver: cronText(raw.deliver) } : {}),
+    ...(cronText(raw.model) ? { model: cronText(raw.model) } : {}),
+    ...(cronText(raw.provider) ? { provider: cronText(raw.provider) } : {}),
+    ...(profile || cronText(raw.profile) ? { profile: profile || cronText(raw.profile) } : {}),
+  }
 }
 
 export async function loadCronJobs(profile?: string, baseUrl = activeHermes): Promise<CronJob[]> {

@@ -25,6 +25,11 @@ describe('live Tasks reconciliation', () => {
     expect(detail).toMatchObject({ job_id: 'airlocator-watchdog', id: 'airlocator-watchdog', profile: 'airlocator', prompt: 'Run the complete daily watchdog prompt.' })
   })
 
+  it('normalizes structured Dashboard schedule metadata before task-detail rendering', () => {
+    const detail = normalizeCronJob({ id: '62ecc535b0f1', schedule: { kind: 'cron', expr: '0 10 * * *', display: 'every day at 10am' }, schedule_display: 'every day at 10am', prompt: 'Full watchdog prompt.' }, 'gaetan')
+    expect(detail).toMatchObject({ job_id: '62ecc535b0f1', schedule: 'every day at 10am', prompt: 'Full watchdog prompt.', profile: 'gaetan' })
+  })
+
   it('rejects a malformed Dashboard detail without an identifier', () => {
     expect(() => normalizeCronJob({ prompt: 'Broken' }, 'airlocator')).toThrow('without a job ID')
   })
