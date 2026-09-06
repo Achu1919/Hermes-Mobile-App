@@ -10,7 +10,7 @@ import { ConnectionSettings } from './components/ConnectionSettings'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { flushSync } from 'react-dom'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
-import { buildBotRows } from './live-model'
+import { buildBotRows, durableSessionId } from './live-model'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
@@ -181,7 +181,7 @@ export default function App() {
   const rows = useMemo(() => buildBotRows(profiles).map(({ profile, session }) => ({
     profile,
     session: session ? {
-      id: session.resolved_id || session.id,
+      id: durableSessionId(session),
       title: profile.display_name || titleize(profile.name),
       preview: session.preview || '',
       profile: profile.name,
@@ -281,7 +281,7 @@ export default function App() {
       const canonical = createdProfile?.canonical_session
       if (createdProfile && canonical) {
         await openSession({
-          id: canonical.resolved_id || canonical.id,
+          id: durableSessionId(canonical),
           title: createdProfile.display_name || titleize(createdProfile.name),
           preview: canonical.preview || '',
           profile: createdProfile.name,

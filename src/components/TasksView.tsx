@@ -22,13 +22,24 @@ export function reconcileTaskJobs(serverJobs: CronJob[], optimisticJobs: Readonl
   return { jobs: [...merged.values()], pending }
 }
 
+type TaskFilter = 'all' | 'running' | 'scheduled'
+
+export function deriveTaskSections(jobs: CronJob[], filter: TaskFilter) {
+  const running = jobs.filter(job => stateOf(job) === 'running')
+  const scheduled = filter === 'running' ? [] : jobs.filter(job => stateOf(job) === 'scheduled')
+  // Keep paused/error jobs visible beside Scheduled work so their only action,
+  // Resume, is never hidden by the very filter that exposed the task before pause.
+  const attention = filter === 'running' ? [] : jobs.filter(job => !['running', 'scheduled'].includes(stateOf(job)))
+  return { running, scheduled, attention }
+}
+
 export function TasksView({ back, profiles }: Props) {
   const [jobs, setJobs] = useState<CronJob[]>([])
   const [selected, setSelected] = useState<CronJob | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState('')
-  const [filter, setFilter] = useState<'all' | 'running' | 'scheduled'>('all')
+  const [filter, setFilter] = useState<TaskFilter>('all')
   const [createOpen, setCreateOpen] = useState(false)
   const [pullDistance, setPullDistance] = useState(0)
   const [pullRefreshing, setPullRefreshing] = useState(false)
@@ -68,9 +79,7 @@ export function TasksView({ back, profiles }: Props) {
     return () => window.removeEventListener('hermes-mobile-back', onMobileBack)
   }, [selected, createOpen, back])
   useEffect(() => { void refresh(); const timer = window.setInterval(() => void refresh(), 20_000); return () => window.clearInterval(timer) }, [scopeKey])
-  const running = useMemo(() => jobs.filter(job => stateOf(job) === 'running'), [jobs])
-  const scheduled = useMemo(() => jobs.filter(job => stateOf(job) === 'scheduled'), [jobs])
-  const visibleJobs = filter === 'running' ? running : filter === 'scheduled' ? scheduled : jobs.filter(job => stateOf(job) !== 'running')
+  const { running, scheduled, attention } = useMemo(() => deriveTaskSections(jobs, filter), [jobs, filter])
   const toggle = async (job: CronJob) => {
     const action = stateOf(job) === 'paused' ? 'resume' : 'pause'
     const desired: CronJob = { ...job, enabled: action === 'resume', state: action === 'resume' ? 'scheduled' : 'paused' }
@@ -90,9 +99,9 @@ export function TasksView({ back, profiles }: Props) {
   }
   if (selected) return <TaskDetail job={selected} busy={busy} back={() => setSelected(null)} onRefresh={refresh} onToggle={toggle} onTrigger={trigger}/>
   if (createOpen) return <NewTaskSheet profiles={profiles} onClose={() => setCreateOpen(false)} onCreated={refresh}/>
-  const showRunning = filter !== 'scheduled' && running.length > 0
-  const showScheduled = filter === 'all' || filter === 'scheduled'
-  const showOther = filter === 'all' && visibleJobs.some(job => stateOf(job) !== 'scheduled')
+  const showRunning = running.length > 0
+  const showScheduled = scheduled.length > 0
+  const showOther = attention.length > 0
   const pullActive = pullDistance > 8 || pullRefreshing
   return <main className="app tasks-sheet" ref={scrollRef} onTouchStart={event => { if (scrollRef.current?.scrollTop === 0) pullStartRef.current = event.touches[0].clientY }} onTouchMove={event => { if (pullStartRef.current == null || scrollRef.current?.scrollTop !== 0) return; const distance = Math.min(76, Math.max(0, event.touches[0].clientY - pullStartRef.current)); if (distance > 0) event.preventDefault(); setPullDistance(distance) }} onTouchEnd={() => { const shouldRefresh = pullDistance >= 56; pullStartRef.current = null; setPullDistance(0); if (shouldRefresh) void pullRefresh() }}>
     <header className="tasks-head"><button className="back-button" onClick={back} aria-label="Back to Bots"><ArrowLeft size={18}/></button><b>Tasks</b><button className="icon-button" onClick={() => setCreateOpen(true)} aria-label="New task"><Plus size={18}/></button></header>
@@ -100,7 +109,7 @@ export function TasksView({ back, profiles }: Props) {
     <button className="tasks-running" onClick={() => document.getElementById('running-tasks')?.scrollIntoView({ behavior: 'smooth' })}><Zap size={17}/><span>Running now</span><b>{running.length}</b><ChevronRight size={16}/></button>
     <button className="tasks-stat tasks-scheduled" onClick={() => { setFilter('scheduled'); document.getElementById('scheduled-tasks')?.scrollIntoView({ behavior: 'smooth' }) }}><CalendarClock size={17}/><span>Scheduled</span><b>{scheduled.length}</b><ChevronRight size={16}/></button>
     {error && <p className="management-error">{error}</p>}
-    {loading && !jobs.length ? <p className="management-empty">Loading scheduled tasks…</p> : !jobs.length ? <section className="tasks-empty"><CalendarClock size={28}/><b>No scheduled tasks</b><p>Scheduled jobs created in Hermes Desktop will appear here.</p></section> : <>{showRunning && <TaskSection id="running-tasks" label="Running" jobs={running} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>} {showScheduled && <TaskSection id="scheduled-tasks" label="Scheduled jobs" jobs={scheduled} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>} {showOther && <TaskSection label="Paused / attention" jobs={visibleJobs.filter(job => stateOf(job) !== 'scheduled')} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>}</>}
+    {loading && !jobs.length ? <p className="management-empty">Loading scheduled tasks…</p> : !jobs.length ? <section className="tasks-empty"><CalendarClock size={28}/><b>No scheduled tasks</b><p>Scheduled jobs created in Hermes Desktop will appear here.</p></section> : <>{showRunning && <TaskSection id="running-tasks" label="Running" jobs={running} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>} {showScheduled && <TaskSection id="scheduled-tasks" label="Scheduled jobs" jobs={scheduled} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>} {showOther && <TaskSection label="Paused / attention" jobs={attention} busy={busy} onOpen={openTask} onToggle={toggle} onTrigger={trigger}/>}</>}
   </main>
 }
 

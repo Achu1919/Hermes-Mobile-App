@@ -12,6 +12,10 @@ export type RosterProfile = {
 }
 export type BotRow = { profile: RosterProfile; session: ActivitySession | null }
 
+export function durableSessionId(session: ActivitySession): string {
+  return session.id
+}
+
 export function buildBotRows(profiles: RosterProfile[]): BotRow[] {
   return profiles
     .map(profile => ({ profile, session: profile.canonical_session || null }))

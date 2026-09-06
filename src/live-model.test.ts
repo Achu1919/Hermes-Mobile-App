@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildBotRows } from './live-model'
+import { buildBotRows, durableSessionId } from './live-model'
 
 describe('live Hermes Bot roster', () => {
   it('uses each profile canonical Bot Chat, never its newest unrelated session', () => {
@@ -10,5 +10,9 @@ describe('live Hermes Bot roster', () => {
     expect(rows.map(row => row.profile.name)).toEqual(['hermes-mobile-app', 'gaetan'])
     expect(rows[1].session?.preview).toBe('Current Bot reply')
     expect(rows[1].session?.id).toBe('bot')
+  })
+
+  it('uses the durable session key rather than a stale resolved runtime ID for navigation', () => {
+    expect(durableSessionId({ id: 'stored-bot-chat', resolved_id: 'reaped-runtime-42' })).toBe('stored-bot-chat')
   })
 })
