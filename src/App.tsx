@@ -10,6 +10,7 @@ import { ConnectionSettings } from './components/ConnectionSettings'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { flushSync } from 'react-dom'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
+import { appendCompletedAssistantMessage } from './chat-reconciliation'
 import { buildBotRows, resolveCanonicalSessionId } from './live-model'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
@@ -228,6 +229,7 @@ export default function App() {
     if (!text && !attachmentRefs.length) return false
     const prompt = buildAttachmentPrompt(text, attachmentRefs)
     let completionUsage: LiveUsage | undefined
+    let streamedText = ''
     if (voiceText === undefined) setDraft('')
     setError('')
     setSending(true)
@@ -236,9 +238,13 @@ export default function App() {
     setMessages(items => [...items, { id: -Date.now(), role: 'user', content: attachmentSummary(text, attachmentRefs) }])
     try {
       await connectAndSubmit(selected.id, selected.profile, prompt, (type, payload) => {
-        if (type === 'message.delta') setStreaming(current => current + String(payload.text || ''))
+        if (type === 'message.delta') {
+          streamedText += String(payload.text || '')
+          setStreaming(streamedText)
+        }
         if (type === 'message.complete') {
-          setStreaming(String(payload.text || ''))
+          streamedText = String(payload.text || streamedText)
+          setStreaming(streamedText)
           completionUsage = payload.usage && typeof payload.usage === 'object' ? payload.usage as LiveUsage : undefined
         }
         if (type === 'tool.start') setToolActivities(items => {
@@ -251,7 +257,12 @@ export default function App() {
         })
         if (type === 'error') setError(String(payload.message || 'Hermes could not complete that request.'))
       })
-      await openSession(selected, completionUsage)
+      if (streamedText.trim()) {
+        setMessages(items => appendCompletedAssistantMessage(items, streamedText, completionUsage))
+        setStreaming('')
+      } else {
+        await openSession(selected, completionUsage)
+      }
       await refresh()
       return true
     } catch (reason) {
