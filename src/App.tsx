@@ -7,6 +7,7 @@ import { BotAppearancePicker } from './components/BotAppearancePicker'
 import { BotProfileSheet } from './components/BotProfileSheet'
 import { TasksView } from './components/TasksView'
 import { ConnectionSettings } from './components/ConnectionSettings'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { flushSync } from 'react-dom'
 import { buildAttachmentPrompt, attachmentSummary } from './attachment-routing'
 import { buildBotRows } from './live-model'
@@ -77,6 +78,23 @@ export default function App() {
   const [rosterPullRefreshing, setRosterPullRefreshing] = useState(false)
   const rosterScrollRef = useRef<HTMLDivElement | null>(null)
   const rosterPullStartRef = useRef<number | null>(null)
+
+  const navigationRef = useRef({ selected: false, profileSheet: false, settings: false, createOpen: false, tab: 'bots' as Tab })
+  navigationRef.current = { selected: Boolean(selected), profileSheet, settings, createOpen, tab }
+
+  useEffect(() => {
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    void getCurrentWindow().onCloseRequested(event => {
+      const navigation = navigationRef.current
+      if (navigation.profileSheet) { event.preventDefault(); setProfileSheet(false); return }
+      if (navigation.selected) { event.preventDefault(); setSelected(null); return }
+      if (navigation.settings) { event.preventDefault(); setSettings(false); return }
+      if (navigation.createOpen) { event.preventDefault(); setCreateOpen(false); return }
+      if (navigation.tab !== 'bots') { event.preventDefault(); setTab('bots') }
+    }).then(remove => { if (disposed) remove(); else unlisten = remove }).catch(() => {})
+    return () => { disposed = true; unlisten?.() }
+  }, [])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
