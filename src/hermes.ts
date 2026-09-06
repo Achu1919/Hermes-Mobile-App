@@ -23,6 +23,7 @@ export type ProfileDetails = {
 export type SkillSearchResult = { name: string; description?: string }
 export type CronJob = {
   job_id: string
+  id?: string
   name?: string
   prompt?: string
   prompt_preview?: string
@@ -214,14 +215,20 @@ export async function installHubSkill(profile: string, name: string, baseUrl = a
   if (result.installed !== true) throw new Error(`Hermes could not install “${name}”.`)
 }
 
+export function normalizeCronJob(job: Partial<CronJob>, profile = ''): CronJob {
+  const jobId = String(job.job_id || job.id || '').trim()
+  if (!jobId) throw new Error('Hermes returned task details without a job ID.')
+  return { ...job, job_id: jobId, profile: profile || job.profile }
+}
+
 export async function loadCronJobs(profile?: string, baseUrl = activeHermes): Promise<CronJob[]> {
   const result = await rpcCall<CronList>('cron.manage', { action: 'list', include_disabled: true, ...(profile ? { profile } : {}) }, baseUrl)
-  return Array.isArray(result.jobs) ? result.jobs.map(job => ({ ...job, profile: result.scoped || profile || job.profile })) : []
+  return Array.isArray(result.jobs) ? result.jobs.map(job => normalizeCronJob(job, result.scoped || profile || job.profile || '')) : []
 }
 
 export async function loadCronJob(jobId: string, profile = '', baseUrl = activeHermes): Promise<CronJob> {
   const raw = await invoke<string>('hermes_cron_job', { baseUrl, jobId, profile })
-  return JSON.parse(raw) as CronJob
+  return normalizeCronJob(JSON.parse(raw) as Partial<CronJob>, profile)
 }
 
 export async function loadCronRuns(jobId: string, profile = '', baseUrl = activeHermes): Promise<CronRun[]> {
