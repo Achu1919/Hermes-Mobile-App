@@ -144,7 +144,7 @@ function PairingSettings({ back, onPaired, onPairingBusy, initialEndpoint }: { b
       <p className="pairing-note">Never enter <code>127.0.0.1</code> or <code>localhost</code> on your phone—those point back to the phone itself.</p>
     </section>
     <section className="pairing-steps">
-      <p>PAIR AN ANDROID PHONE</p>
+      <p>PAIR A PHONE</p>
       <ol>
         <li><Smartphone size={17}/><span><b>Join the same Tailnet</b><small>Install Tailscale on Windows and Android, then sign into the same account.</small></span></li>
         <li><Wifi size={17}/><span><b>Run a reachable Hermes gateway</b><small>Use a Tailscale hostname or authenticated HTTPS URL. Keep direct public port exposure off.</small></span></li>
