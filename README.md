@@ -9,7 +9,8 @@
   Hermes Mobile hooks into your real Bots, sessions, tools, approvals, and credentials on the host PC—then puts the control surface in your pocket.
 
   [![Repository][badge-repository]][link-repo]
-  [![Platforms][badge-platforms]][link-repo]
+  [![Target iOS][badge-ios]][link-repo]
+  [![Target Android][badge-android]][link-repo]
   [![Hermes Agent][badge-hermes]][link-hermes]
   [![Tauri v2][badge-tauri]][link-tauri]
   [![React 19][badge-react]][link-react]
@@ -106,9 +107,10 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) before modifying the production bridge.
 - [Nous Research Discord](https://discord.gg/NousResearch)
 
 [badge-hermes]: https://img.shields.io/badge/Hermes%20Agent-Live%20control%20surface-5869D8?style=flat-square
+[badge-ios]: https://img.shields.io/badge/Target-iOS-5869D8?logo=apple&logoColor=white&style=flat-square
+[badge-android]: https://img.shields.io/badge/Target-Android-5869D8?logo=android&logoColor=white&style=flat-square
 [badge-tauri]: https://img.shields.io/badge/Tauri-v2-24C8DB?logo=tauri&logoColor=white&style=flat-square
 [badge-react]: https://img.shields.io/badge/React-v19-149ECA?logo=react&logoColor=white&style=flat-square
-[badge-platforms]: https://img.shields.io/badge/Targets-Windows%20%C2%B7%20Android%20%C2%B7%20iOS-3B82F6?style=flat-square
 [link-hermes]: https://hermes-agent.nousresearch.com/
 [link-tauri]: https://v2.tauri.app/
 [link-react]: https://react.dev/
