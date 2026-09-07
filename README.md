@@ -28,7 +28,7 @@
 
 ## Why Hermes Mobile
 
-I fell in love with Hermes, but could not find an Android client that let me control my Bots the way I wanted from my phone. Hermes Mobile is the companion I built: mobile-native, beautifully compact, and connected to the existing Hermes runtime rather than a second agent or copied provider credentials.
+Hermes Mobile is a beautiful cross-platform open-source mobile applicaiton that grants easy control of your Hermes Bots (thanks Nous!). It's mobile-native, beautifully compact at ~25KB, and all it really does is connect to your existing Hermes runtime/agents/bots/computer via Tailscale (see Tailscale instrucitons below or in-app).
 
 Your host PC remains the authority for agents, credentials, approvals, tools, sessions, files, and durable history. Hermes Mobile is the secure control surface in your pocket. Hope you enjoy it.
 
