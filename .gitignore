@@ -5,3 +5,8 @@ src-tauri/target/
 .env
 .env.*
 !.env.example
+# Local AI-assistant instructions (never commit)
+AGENTS.md
+SOUL.md
+.hermes.md
+CLAUDE.md
