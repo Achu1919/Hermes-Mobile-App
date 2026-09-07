@@ -13,6 +13,13 @@ val tauriProperties = Properties().apply {
     }
 }
 
+// Release signing is intentionally environment-driven. Keep the upload
+// keystore and passwords outside the repository and never commit them.
+val hermesMobileKeystore = System.getenv("HERMES_MOBILE_KEYSTORE")?.takeIf { it.isNotBlank() }
+val hermesMobileStorePassword = System.getenv("HERMES_MOBILE_STORE_PASSWORD")?.takeIf { it.isNotBlank() }
+val hermesMobileKeyAlias = System.getenv("HERMES_MOBILE_KEY_ALIAS")?.takeIf { it.isNotBlank() }
+val hermesMobileKeyPassword = System.getenv("HERMES_MOBILE_KEY_PASSWORD")?.takeIf { it.isNotBlank() }
+
 android {
     compileSdk = 36
     namespace = "com.hermesagent.mobile"
@@ -23,6 +30,16 @@ android {
         targetSdk = 36
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
+    }
+    signingConfigs {
+        if (hermesMobileKeystore != null && hermesMobileStorePassword != null && hermesMobileKeyAlias != null && hermesMobileKeyPassword != null) {
+            create("hermesMobileRelease") {
+                storeFile = file(hermesMobileKeystore)
+                storePassword = hermesMobileStorePassword
+                keyAlias = hermesMobileKeyAlias
+                keyPassword = hermesMobileKeyPassword
+            }
+        }
     }
     buildTypes {
         getByName("debug") {
@@ -37,6 +54,7 @@ android {
             }
         }
         getByName("release") {
+            signingConfig = signingConfigs.findByName("hermesMobileRelease")
             // Hermes Mobile supports private Tailscale/LAN HTTP gateways. The
             // native password path rejects public HTTP before sending credentials.
             manifestPlaceholders["usesCleartextTraffic"] = "true"
