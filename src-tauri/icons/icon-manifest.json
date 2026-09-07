@@ -1,5 +1,7 @@
 {
   "default": "HermesMobileAppIconSource.png",
   "bg_color": "#000000",
-  "android_bg": "HermesMobileAppIconBackground.png"
+  "android_bg": "HermesMobileAppIconBackground.png",
+  "android_fg": "HermesMobileAndroidForeground.png",
+  "android_fg_scale": 85
 }

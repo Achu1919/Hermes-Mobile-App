@@ -81,6 +81,14 @@ pnpm tauri ios dev
 
 Hermes Desktop’s official [multi-connection gateway guide](https://hermes-agent.nousresearch.com/docs/user-guide/multi-connection-desktop) describes the supported remote-gateway contracts and authentication options.
 
+### Install a private Tailscale host gateway
+
+For a durable phone connection, install the host-side gateway service on the computer that runs Hermes. The portable Windows and macOS installers discover Hermes and Tailscale, configure authenticated private access, and keep the gateway running after login:
+
+- [Windows and macOS installer guide](scripts/README.md)
+- Windows: `scripts/setup-hermes-tailscale-gateway.cmd` (run as administrator)
+- macOS: `./scripts/install-hermes-mobile-gateway.sh install`
+
 ## Architecture
 
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before modifying the production bridge.
