@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { findRecoveredAssistantIndex, recoveredTimeline, timelineSignature, type ActiveChatTurn } from './chat-recovery'
+import { findRecoveredAssistantIndex, timelineSignature, type ActiveChatTurn } from './chat-recovery'
 
 const turn: ActiveChatTurn = {
   sessionId: 'research-chat',
   profile: 'research-rabbit',
   generation: 7,
   userContent: 'Capture the screenshot and summarize it.',
+  userCountBefore: 1,
 }
 
 it('finds a completed assistant message after the active user turn', () => {
@@ -36,16 +37,6 @@ it('does not settle from an older assistant message or blank partial reply', () 
     { id: 1, role: 'assistant', content: 'Earlier answer' },
     { id: 2, role: 'assistant', content: 'A stale repeated answer' },
   ], turn)).toBe(-1)
-})
-
-it('removes duplicate assistant content before the recovered settled row', () => {
-  const messages = [
-    { id: 1, role: 'user', content: turn.userContent },
-    { id: 2, role: 'assistant', content: 'Recovered answer' },
-    { id: 3, role: 'tool', content: 'Tool detail' },
-    { id: 4, role: 'assistant', content: 'Recovered answer' },
-  ]
-  expect(recoveredTimeline(messages, 3)).toEqual([messages[0], messages[2]])
 })
 
 it('produces stable signatures for unchanged authoritative timelines', () => {

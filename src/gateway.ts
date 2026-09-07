@@ -241,9 +241,8 @@ export class HermesGatewayClient {
   }
 
   async interruptSession(sessionId: string) {
-    const settle = this.activeTurnCancels.get(sessionId)
     const result = await this.call('session.interrupt', { session_id: sessionId })
-    if (settle && this.activeTurnCancels.get(sessionId) === settle) settle()
+    this.settlePrompt(sessionId)
     return result
   }
 
