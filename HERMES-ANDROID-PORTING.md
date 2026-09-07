@@ -1,6 +1,6 @@
 # Porting lessons from `rusty4444/hermes-android`
 
-Research baseline: upstream commit `0ea693890d00a7f902b6d063337c4c76743d8fbc` (Flutter package `2.1.0+2140`) and the completed Remote Gateway merge discussion in issue [#81](https://github.com/rusty4444/hermes-android/issues/81). The reference clone is kept outside this repository at `C:\Users\PC\Documents\Coding Projects\Hermes Android Reference`.
+Research baseline: upstream commit `0ea693890d00a7f902b6d063337c4c76743d8fbc` (Flutter package `2.1.0+2140`) and the completed Remote Gateway merge discussion in issue [#81](https://github.com/rusty4444/hermes-android/issues/81).
 
 The repository identifies its license as MIT in its README. We should preserve attribution when adapting non-trivial implementation details; we should port contracts and architecture into our React/Tauri code rather than importing Flutter/Android code into the cross-platform product.
 
