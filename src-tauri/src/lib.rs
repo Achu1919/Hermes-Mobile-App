@@ -207,6 +207,48 @@ fn hermes_transcribe(
     )
 }
 
+fn authenticated_post_for_app(
+    app: &tauri::AppHandle,
+    origin: &str,
+    path: &str,
+    body: serde_json::Value,
+) -> Result<String, String> {
+    if is_loopback(origin) {
+        return authenticated_post(origin, path, body);
+    }
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|error| error.to_string())?;
+    let mut response = client
+        .post(format!("{origin}{path}"))
+        .bearer_auth(remote_auth::load(app, origin)?.access_token)
+        .json(&body)
+        .send()
+        .map_err(|error| format!("Hermes request failed: {error}"))?;
+    if response.status().as_u16() == 401 {
+        let refreshed = remote_auth::refresh(app, origin)?;
+        response = client
+            .post(format!("{origin}{path}"))
+            .bearer_auth(refreshed.access_token)
+            .json(&body)
+            .send()
+            .map_err(|error| format!("Hermes retry failed after token refresh: {error}"))?;
+    }
+    let status = response.status();
+    let text = response
+        .text()
+        .map_err(|error| format!("Could not read Hermes response: {error}"))?;
+    if !status.is_success() {
+        let detail = serde_json::from_str::<serde_json::Value>(&text)
+            .ok()
+            .and_then(|value| value.get("detail").and_then(|detail| detail.as_str()).map(str::to_string))
+            .unwrap_or_else(|| text.trim().to_string());
+        return Err(format!("Hermes rejected task creation (HTTP {status}): {detail}"));
+    }
+    Ok(text)
+}
+
 #[tauri::command]
 fn hermes_cron_job(
     app: tauri::AppHandle,
@@ -325,6 +367,7 @@ fn hermes_cron_delivery_targets(app: tauri::AppHandle, base_url: String) -> Resu
 
 #[tauri::command]
 fn hermes_create_cron(
+    app: tauri::AppHandle,
     base_url: String,
     profile: String,
     body: serde_json::Value,
@@ -335,11 +378,12 @@ fn hermes_create_cron(
     } else {
         format!("?profile={}", urlencoding::encode(&profile))
     };
-    authenticated_post(&origin, &format!("/api/cron/jobs{}", query), body)
+    authenticated_post_for_app(&app, &origin, &format!("/api/cron/jobs{}", query), body)
 }
 
 #[tauri::command]
 fn hermes_instantiate_cron_blueprint(
+    app: tauri::AppHandle,
     base_url: String,
     profile: String,
     body: serde_json::Value,
@@ -350,7 +394,8 @@ fn hermes_instantiate_cron_blueprint(
     } else {
         format!("?profile={}", urlencoding::encode(&profile))
     };
-    authenticated_post(
+    authenticated_post_for_app(
+        &app,
         &origin,
         &format!("/api/cron/blueprints/instantiate{}", query),
         body,

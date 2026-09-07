@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { ArrowLeft, Check, Plus, X } from 'lucide-react'
 
+import { errorMessage } from '../connection-state'
 import { createCronJob, instantiateCronBlueprint, loadCronBlueprints, loadCronDeliveryTargets, loadModelOptions, type AutomationBlueprint, type CronDeliveryTarget, type LiveProfile, type ModelOptions } from '../hermes'
 
 type Props = { profiles: LiveProfile[]; onClose: () => void; onCreated: () => Promise<void> }
@@ -52,7 +53,7 @@ export function NewTaskSheet({ profiles, onClose, onCreated }: Props) {
         await createCronJob(bot, { name: name.trim() || undefined, prompt: prompt.trim(), schedule: schedule.trim(), deliver: selectedDeliveries.join(','), ...(model ? { model, provider } : {}) })
       }
       await onCreated(); onClose()
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Hermes could not create this task.') } finally { setSaving(false) }
+    } catch (reason) { setError(errorMessage(reason, 'Hermes could not create this task.')) } finally { setSaving(false) }
   }
   const toggleDelivery = (id: string) => setDeliver(current => current.includes(id) ? current.filter(item => item !== id) : [...current, id])
   return <main className="app task-create-sheet"><header className="task-create-head"><button className="round-control" onClick={onClose} aria-label="Close new task"><ArrowLeft size={18}/></button><span><b>New task</b><small>Schedule an automated Hermes prompt</small></span><button className="round-control" onClick={onClose} aria-label="Close new task"><X size={17}/></button></header><div className="task-create-scroll">
