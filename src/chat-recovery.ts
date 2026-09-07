@@ -9,21 +9,29 @@ export type ActiveChatTurn = {
   profile: string
   generation: number
   userContent: string
-  userCountBefore: number
 }
 
 export function findRecoveredAssistantIndex(messages: RecoverableChatMessage[], turn: ActiveChatTurn): number {
-  const userMessages = messages.filter(message => message.role === 'user')
-  if (userMessages.length <= turn.userCountBefore) return -1
-  const userIndex = messages.reduce((found, message, index) => (
-    message.role === 'user' && message.content.trim() === turn.userContent.trim() ? index : found
-  ), -1)
-  if (userIndex < 0) return -1
-  for (let index = messages.length - 1; index > userIndex; index -= 1) {
+  let latestUserIndex = -1
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].role === 'user') {
+      latestUserIndex = index
+      break
+    }
+  }
+  if (latestUserIndex < 0 || messages[latestUserIndex].content.trim() !== turn.userContent.trim()) return -1
+  for (let index = messages.length - 1; index > latestUserIndex; index -= 1) {
     const message = messages[index]
     if (message.role === 'assistant' && message.content.trim()) return index
   }
   return -1
+}
+
+export function recoveredTimeline<T extends RecoverableChatMessage>(messages: T[], assistantIndex: number): T[] {
+  const recovered = messages[assistantIndex]
+  return messages.slice(0, assistantIndex).filter(message => !(
+    message.role === 'assistant' && recovered?.role === 'assistant' && (message.id === recovered.id || message.content === recovered.content)
+  ))
 }
 
 export function timelineSignature(messages: RecoverableChatMessage[]): string {

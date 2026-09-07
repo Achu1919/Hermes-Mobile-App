@@ -14,7 +14,7 @@ import { buildBotRows, resolveCanonicalSessionId } from './live-model'
 import { settleAssistantResponse, type SettledAssistantResponse as SettledAssistantState } from './settled-assistant'
 import { isActiveChatTurn } from './chat-turn'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
-import { findRecoveredAssistantIndex, timelineSignature, type ActiveChatTurn } from './chat-recovery'
+import { findRecoveredAssistantIndex, recoveredTimeline, timelineSignature, type ActiveChatTurn } from './chat-recovery'
 import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, settleSessionPrompt, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
 type Tab = 'bots' | 'sessions' | 'tasks'
@@ -265,7 +265,7 @@ export default function App() {
             if (settled) {
               activeChatTurnRef.current = null
               chatTurnGenerationRef.current += 1
-              setMessages(loaded.slice(0, assistantIndex))
+              setMessages(recoveredTimeline(loaded, assistantIndex))
               setSettledAssistant(settled)
               setSending(false)
               setStreaming('')
@@ -304,7 +304,7 @@ export default function App() {
     const priorSettled = settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null
     const priorAssistantMessage = priorSettled ? { id: -(Date.now() + 1), role: 'assistant' as const, content: priorSettled.content, usage: priorSettled.usage } : null
     const localUserMessage = { id: -Date.now(), role: 'user' as const, content: attachmentSummary(text, attachmentRefs) }
-    activeChatTurnRef.current = { sessionId: selected.id, profile: selected.profile, generation: turnId, userContent: localUserMessage.content, userCountBefore: messages.filter(message => message.role === 'user').length }
+    activeChatTurnRef.current = { sessionId: selected.id, profile: selected.profile, generation: turnId, userContent: localUserMessage.content }
     if (voiceText === undefined) setDraft('')
     setSettledAssistant(null)
     setError('')
