@@ -19,7 +19,7 @@ type Props = {
   theme: Theme
   setTheme: (theme: Theme) => void
   close: () => void
-  refresh: () => void
+  refresh: () => Promise<unknown>
   onPairingBusy: (busy: boolean) => void
   onPaired: (endpoint: string) => Promise<void>
 }
@@ -162,6 +162,17 @@ function PairingSettings({ back, onPaired, onPairingBusy, initialEndpoint }: { b
 export function ConnectionSettings({ profiles, sessions, connected, endpoint, theme, setTheme, close, refresh, onPairingBusy, onPaired }: Props) {
   const [page, setPage] = useState<Page>('root')
   const [showThemes, setShowThemes] = useState(false)
+  const [syncState, setSyncState] = useState<'idle' | 'syncing' | 'success' | 'error'>('idle')
+  const syncNow = async () => {
+    if (syncState === 'syncing') return
+    setSyncState('syncing')
+    try {
+      const result = await refresh()
+      setSyncState(result ? 'success' : 'error')
+    } catch {
+      setSyncState('error')
+    }
+  }
   if (page === 'about') return <AboutHermesMobile back={() => setPage('root')}/>
   if (page === 'pairing') return <PairingSettings back={() => setPage('root')} onPaired={onPaired} onPairingBusy={onPairingBusy} initialEndpoint={endpoint}/>
   const displayEndpoint = endpoint?.replace(/^https?:\/\//, '')
@@ -172,9 +183,10 @@ export function ConnectionSettings({ profiles, sessions, connected, endpoint, th
       <h3>{connected ? 'Your Hermes host' : endpoint ? 'Saved host needs attention' : 'Pair this device'}</h3>
       <code>{displayEndpoint || 'No verified Hermes host'}</code>
       {connected ? <div className="stats"><span><b>{profiles}</b>Bots</span><span><b>{sessions}</b>Sessions</span></div> : <p className="connection-guidance">{endpoint ? 'Your host and secure sign-in are saved. Retry verification below; you do not need to re-enter the address.' : 'Connect to a private, authenticated Hermes gateway before this device can view or control your Bots.'}</p>}
-      <button className="primary wide" onClick={connected || endpoint ? refresh : () => setPage('pairing')}>{connected ? 'Sync now' : endpoint ? 'Retry saved connection' : 'Set up security & pairing'}</button>
+      <button className={`primary wide connection-sync-button ${syncState}`} disabled={connected && syncState === 'syncing'} aria-busy={connected && syncState === 'syncing'} onClick={connected ? () => void syncNow() : endpoint ? () => void refresh() : () => setPage('pairing')}>{connected ? syncState === 'syncing' ? <><LoaderCircle className="connection-sync-spinner" size={17}/> Syncing…</> : syncState === 'success' ? <><CheckCircle2 size={17}/> Synced</> : 'Sync now' : endpoint ? 'Retry saved connection' : 'Set up security & pairing'}</button>
+      {connected && syncState !== 'idle' && <p className={`connection-sync-result ${syncState}`} role="status">{syncState === 'syncing' ? 'Refreshing live Hermes data…' : syncState === 'success' ? 'Synced with Hermes Desktop just now.' : 'Sync could not complete. Check the host connection and try again.'}</p>}
     </section>
-    <section className="menu-list"><button>Notifications <span>›</span></button><button onClick={() => setShowThemes(value => !value)}>Appearance <span>{themes.find(item => item.id === theme)?.label} ›</span></button>{showThemes && <div className="theme-picker">{themes.map(item => <button className={item.id === theme ? 'selected' : ''} onClick={() => setTheme(item.id)} key={item.id}><span className={`theme-swatch theme-${item.id}`}/><span><b>{item.label}</b><small>{item.description}</small></span><i>{item.id === theme ? '✓' : ''}</i></button>)}</div>}<button onClick={() => setPage('pairing')}>Security & pairing <span>{connected ? 'Connected ›' : 'Required ›'}</span></button><button onClick={() => setPage('about')}>About Hermes Mobile <span>0.1.0 ›</span></button></section>
+    <section className="menu-list"><button>Notifications <span>›</span></button><button onClick={() => setShowThemes(value => !value)}>Appearance <span>{themes.find(item => item.id === theme)?.label} ›</span></button>{showThemes && <div className="theme-picker">{themes.map(item => <button className={item.id === theme ? 'selected' : ''} onClick={() => setTheme(item.id)} key={item.id}><span className={`theme-swatch theme-${item.id}`}/><span><b>{item.label}</b><small>{item.description}</small></span><i>{item.id === theme ? '✓' : ''}</i></button>)}</div>}<button onClick={() => setPage('pairing')}>Security & pairing <span className={connected ? '' : 'connection-attention'}>{connected ? 'Connected ›' : 'Disconnected ›'}</span></button><button onClick={() => setPage('about')}>About Hermes Mobile <span>0.1.0 ›</span></button></section>
     <p className="fine">The host owns models, credentials, tools, memory, skills, and approvals. This client is the control surface.</p>
   </main>
 }
