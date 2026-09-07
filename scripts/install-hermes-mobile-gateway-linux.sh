@@ -13,6 +13,10 @@ USERNAME=""
 SKIP_AUTH_SETUP=0
 ENABLE_LINGER=0
 UNIT_NAME="hermes-mobile-gateway.service"
+RUNTIME_DIR="$HOME/.local/share/hermes-mobile-gateway"
+RUNNER_PATH="$RUNTIME_DIR/run"
+RUNTIME_ENV="$RUNTIME_DIR/gateway.env"
+PYTHON_BIN=""
 
 info() { printf '\033[36m[Hermes Mobile]\033[0m %s\n' "$*"; }
 ok() { printf '\033[32m[OK]\033[0m %s\n' "$*"; }
@@ -61,6 +65,8 @@ done
 command -v systemctl >/dev/null 2>&1 || die 'systemd/systemctl is required for this Linux installer. Use your distribution’s supported service manager or install systemd first.'
 command -v curl >/dev/null 2>&1 || die 'curl is required for authenticated gateway verification.'
 command -v ss >/dev/null 2>&1 || die 'ss (usually provided by iproute2) is required for listener verification.'
+PYTHON_BIN="$(command -v python3 2>/dev/null || command -v python 2>/dev/null || true)"
+[[ -n "$PYTHON_BIN" ]] || die 'python3 or python is required to validate Hermes gateway status JSON.'
 systemctl --user show-environment >/dev/null 2>&1 || die 'A per-user systemd manager is not available. Log in through a systemd user session, then retry.'
 
 resolve_home() {
@@ -88,8 +94,9 @@ resolve_hermes() {
 }
 
 resolve_tailscale() {
-  command -v tailscale >/dev/null 2>&1 && { command -v tailscale; return; }
-  [[ -x /usr/bin/tailscale ]] && { printf '%s\n' /usr/bin/tailscale; return; }
+  for candidate in "$(command -v tailscale 2>/dev/null || true)" /usr/bin/tailscale /usr/local/bin/tailscale /snap/bin/tailscale; do
+    [[ -n "$candidate" && -x "$candidate" ]] && { printf '%s\n' "$candidate"; return; }
+  done
   die 'Tailscale was not found. Install and sign in to Tailscale first: https://tailscale.com/download/linux'
 }
 
@@ -111,7 +118,8 @@ resolve_ip() {
     printf '%s\n' "$addresses" | grep -Fx -- "$candidate" >/dev/null || die "--tailscale-ip $candidate is not currently assigned to this Linux host's Tailscale interface."
     printf '%s\n' "$candidate"
   else
-    printf '%s\n' "$addresses" | head -n 1
+    [[ "$(printf '%s\n' "$addresses" | wc -l | tr -d ' ')" == '1' ]] || die 'More than one usable Tailscale IPv4 address was found. Rerun with --tailscale-ip and choose the address this host should use.'
+    printf '%s\n' "$addresses"
   fi
 }
 
@@ -161,27 +169,54 @@ configure_auth() {
 
 unit_escape() { printf '%s' "$1" | sed -e 's/\\\\/\\\\\\\\/g' -e 's/"/\\\\"/g' -e 's/%/%%/g'; }
 
+write_runtime() {
+  mkdir -p "$RUNTIME_DIR"
+  umask 077
+  printf 'HERMES_HOME=%q\nHERMES_EXE=%q\nTAILSCALE_BIN=%q\nTAILSCALE_IP=%q\nPORT=%q\n' "$RESOLVED_HOME" "$RESOLVED_HERMES" "$TAILSCALE_BIN" "$RESOLVED_IP" "$PORT" > "$RUNTIME_ENV"
+  cat > "$RUNNER_PATH" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+source "$(dirname "$0")/gateway.env"
+valid_ip() { awk -v ip="$1" 'BEGIN { n=split(ip,a,"."); exit !(n==4 && a[1]==100 && a[2]>=64 && a[2]<=127 && a[3]>=0 && a[3]<=255 && a[4]>=0 && a[4]<=255) }'; }
+valid_ip "$TAILSCALE_IP" || { printf 'Saved Tailscale IP is invalid: %s\n' "$TAILSCALE_IP" >&2; exit 1; }
+"$TAILSCALE_BIN" ip -4 2>/dev/null | grep -Fx -- "$TAILSCALE_IP" >/dev/null || { printf 'Saved Tailscale IP is no longer assigned: %s. Rerun the Hermes Mobile Linux installer.\n' "$TAILSCALE_IP" >&2; exit 1; }
+[[ "${1:-}" == '--check' ]] && exit 0
+exec "$HERMES_EXE" serve --host "$TAILSCALE_IP" --port "$PORT" --skip-build
+EOF
+  chmod 700 "$RUNTIME_DIR" "$RUNNER_PATH"
+  chmod 600 "$RUNTIME_ENV"
+}
+
 install_unit() {
-  local unit_dir log_dir escaped_home escaped_exe escaped_ip
+  local unit_dir log_dir escaped_env escaped_runner
   unit_dir="$HOME/.config/systemd/user"
   UNIT_PATH="$unit_dir/$UNIT_NAME"
   log_dir="$RESOLVED_HOME/logs"
   mkdir -p "$unit_dir" "$log_dir"
-  escaped_home="$(unit_escape "$RESOLVED_HOME")"
-  escaped_exe="$(unit_escape "$RESOLVED_HERMES")"
-  escaped_ip="$(unit_escape "$RESOLVED_IP")"
+  write_runtime
+  escaped_env="$(unit_escape "$ENV_FILE")"
+  escaped_runner="$(unit_escape "$RUNNER_PATH")"
   cat > "$UNIT_PATH" <<EOF
 [Unit]
 Description=Hermes Mobile private Tailscale gateway
+Documentation=https://hermes-agent.nousresearch.com/docs/user-guide/features/web-dashboard
 After=network-online.target
 Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
 
 [Service]
 Type=simple
-Environment="HERMES_HOME=$escaped_home"
-ExecStart="$escaped_exe" serve --host "$escaped_ip" --port "$PORT"
+WorkingDirectory=%h
+EnvironmentFile="$escaped_env"
+ExecStartPre="$escaped_runner" --check
+ExecStart="$escaped_runner"
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=30
+KillSignal=SIGTERM
+KillMode=control-group
+UMask=0077
 
 [Install]
 WantedBy=default.target
@@ -212,12 +247,16 @@ assert_private_hermes_listener() {
   [[ "$command" == *hermes*serve*"--host $RESOLVED_IP"*"--port $PORT"* ]]
 }
 
+status_supports_pairing() {
+  "$PYTHON_BIN" -c 'import json, sys; value=json.load(sys.stdin); sys.exit(0 if value.get("auth_required") is True and "native_pkce" in value.get("auth_flows", []) else 1)'
+}
+
 test_gateway() {
   local url="http://$RESOLVED_IP:$PORT/api/status" response attempt
   for attempt in $(seq 1 20); do
     if assert_private_hermes_listener >/dev/null 2>&1; then
       response="$(curl --fail --silent --show-error --connect-timeout 3 "$url" 2>/dev/null || true)"
-      if printf '%s' "$response" | grep -Eq '"auth_required"[[:space:]]*:[[:space:]]*true' && printf '%s' "$response" | grep -Eq '"auth_flows"[[:space:]]*:[[:space:]]*\[[^]]*"native_pkce"'; then ok "Authenticated Hermes gateway is exclusively bound at $url"; return; fi
+      if printf '%s' "$response" | status_supports_pairing; then ok "Authenticated Hermes gateway is exclusively bound at $url"; return; fi
     fi
     sleep 1
   done
@@ -232,7 +271,7 @@ show_status() {
   if systemctl --user is-active --quiet "$UNIT_NAME"; then ok "systemd unit $UNIT_NAME is active."; else warn "systemd unit $UNIT_NAME is not active."; healthy=1; fi
   if ! assert_private_hermes_listener >/dev/null 2>&1; then warn 'Gateway listener is missing, broad, or not Hermes-owned.'; healthy=1; fi
   response="$(curl --fail --silent --connect-timeout 3 "http://$RESOLVED_IP:$PORT/api/status" 2>/dev/null || true)"
-  if printf '%s' "$response" | grep -Eq '"auth_required"[[:space:]]*:[[:space:]]*true' && printf '%s' "$response" | grep -Eq '"auth_flows"[[:space:]]*:[[:space:]]*\[[^]]*"native_pkce"'; then ok 'Gateway API: reachable, authenticated, and supports native pairing.'; else warn 'Gateway API is unreachable, unauthenticated, or lacks native pairing.'; healthy=1; fi
+  if printf '%s' "$response" | status_supports_pairing; then ok 'Gateway API: reachable, authenticated, and supports native pairing.'; else warn 'Gateway API is unreachable, unauthenticated, or lacks native pairing.'; healthy=1; fi
   return "$healthy"
 }
 
@@ -240,7 +279,9 @@ UNIT_PATH="$HOME/.config/systemd/user/$UNIT_NAME"
 if [[ "$MODE" == 'uninstall' ]]; then
   systemctl --user disable --now "$UNIT_NAME" >/dev/null 2>&1 || true
   rm -f "$UNIT_PATH"
+  rm -rf "$RUNTIME_DIR"
   systemctl --user daemon-reload >/dev/null 2>&1 || true
+  systemctl --user reset-failed "$UNIT_NAME" >/dev/null 2>&1 || true
   ok "Removed $UNIT_NAME. Existing Hermes credentials were preserved."
   exit 0
 fi
