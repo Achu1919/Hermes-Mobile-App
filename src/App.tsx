@@ -304,8 +304,7 @@ export default function App() {
     const priorSettled = settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null
     const priorAssistantMessage = priorSettled ? { id: -(Date.now() + 1), role: 'assistant' as const, content: priorSettled.content, usage: priorSettled.usage } : null
     const localUserMessage = { id: -Date.now(), role: 'user' as const, content: attachmentSummary(text, attachmentRefs) }
-    const latestKnownMessageId = messages.reduce((latest, message) => Math.max(latest, message.id > 0 ? message.id : 0), 0)
-    activeChatTurnRef.current = { sessionId: selected.id, profile: selected.profile, generation: turnId, userContent: localUserMessage.content, latestKnownMessageId }
+    activeChatTurnRef.current = { sessionId: selected.id, profile: selected.profile, generation: turnId, userContent: localUserMessage.content }
     if (voiceText === undefined) setDraft('')
     setSettledAssistant(null)
     setError('')
