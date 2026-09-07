@@ -98,6 +98,44 @@ For nonstandard installs:
 
 `uninstall` removes only the LaunchAgent and leaves Hermes credentials intact.
 
+## Linux
+
+From the project directory on a systemd-based Linux distribution:
+
+```bash
+chmod +x scripts/install-hermes-mobile-gateway-linux.sh
+./scripts/install-hermes-mobile-gateway-linux.sh install
+./scripts/install-hermes-mobile-gateway-linux.sh status
+./scripts/install-hermes-mobile-gateway-linux.sh uninstall
+```
+
+The Linux installer is separate from the macOS script. It:
+
+- discovers `hermes` from PATH, `~/.local/bin`, standard system locations, or the Hermes home;
+- discovers the host's assigned Tailscale IPv4 address;
+- binds `hermes serve` only to that private Tailscale address—never `0.0.0.0`;
+- writes a per-user systemd service at `~/.config/systemd/user/hermes-mobile-gateway.service`;
+- configures/preserves authenticated Hermes basic auth and restricts the credential file to the user;
+- verifies one Hermes-owned private listener plus authenticated `/api/status` before reporting success;
+- preserves Hermes credentials during uninstall.
+
+For a desktop user, the service starts with their systemd user session. For an always-on host that must remain reachable after logout, explicitly opt in to user lingering:
+
+```bash
+./scripts/install-hermes-mobile-gateway-linux.sh install --enable-linger
+```
+
+If the host uses nonstandard locations, pass them directly:
+
+```bash
+./scripts/install-hermes-mobile-gateway-linux.sh install \
+  --hermes /path/to/hermes \
+  --hermes-home /path/to/hermes-home \
+  --tailscale-ip 100.x.y.z
+```
+
+This installer requires Linux systemd, Tailscale, `curl`, `ss`, and `openssl`. It fails closed when a per-user systemd manager, authenticated gateway, private Tailscale bind, or listener ownership cannot be verified.
+
 ## Pair the phone
 
 After an installer succeeds, use the printed address in Hermes Mobile’s

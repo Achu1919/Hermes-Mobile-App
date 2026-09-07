@@ -83,11 +83,12 @@ Hermes Desktop’s official [multi-connection gateway guide](https://hermes-agen
 
 ### Install a private Tailscale host gateway
 
-For a durable phone connection, install the host-side gateway service on the computer that runs Hermes. The portable Windows and macOS installers discover Hermes and Tailscale, configure authenticated private access, and keep the gateway running after login:
+For a durable phone connection, install the host-side gateway service on the computer that runs Hermes. The portable Windows, macOS, and Linux installers discover Hermes and Tailscale, configure authenticated private access, and keep the gateway running after login:
 
-- [Windows and macOS installer guide](scripts/README.md)
+- [Cross-platform installer guide](scripts/README.md)
 - Windows: `scripts/setup-hermes-tailscale-gateway.cmd` (run as administrator)
 - macOS: `./scripts/install-hermes-mobile-gateway.sh install`
+- Linux (systemd): `./scripts/install-hermes-mobile-gateway-linux.sh install`
 
 ## Architecture
 
