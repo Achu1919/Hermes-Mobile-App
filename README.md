@@ -1,6 +1,6 @@
 <div align="center">
   <a href="https://github.com/CodeUpdaterBot/Hermes-Mobile-App" target="_blank" rel="noreferrer">
-    <img src="docs/assets/HermesMobileMark.png" alt="Hermes Mobile logo" width="212" />
+    <img src="docs/assets/HermesMobileMark.png" alt="Hermes Mobile app logo" width="300" />
   </a>
   <h1>Hermes Mobile</h1>
 
@@ -100,3 +100,7 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) before modifying the production bridge.
 [link-tauri]: https://v2.tauri.app/
 [link-react]: https://react.dev/
 [link-repo]: https://github.com/CodeUpdaterBot/Hermes-Mobile-App
+
+<p align="center">
+  <img src="docs/assets/HermesMobileFooter.png" alt="Blue-and-white illustrated city beside a lake with a bridge and hilltop castle" width="1200" />
+</p>

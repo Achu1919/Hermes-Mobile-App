@@ -2,10 +2,11 @@ import { invoke } from '@tauri-apps/api/core'
 import { useRef, useState } from 'react'
 import { ArrowLeft, CheckCircle2, Copy, ExternalLink, GitBranch, Globe2, Heart, LoaderCircle, LockKeyhole, ShieldCheck, Smartphone, Wifi } from 'lucide-react'
 
+import HermesMobileAboutMark from '../assets/HermesMobileAboutMark.png'
 import { errorMessage, supportsBasicAuth } from '../connection-state'
 import { nativeSignIn, passwordSignIn, probeHermesGateway } from '../hermes'
 
-const HermesMobileLogo = '/HermesMobileMark.png'
+const HermesMobileLogo = HermesMobileAboutMark
 
 type Theme = 'dark' | 'light' | 'grey' | 'aurora'
 type Page = 'root' | 'pairing' | 'about'
