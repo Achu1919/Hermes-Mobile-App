@@ -1,6 +1,7 @@
 mod remote_auth;
 
 use std::time::Duration;
+#[cfg(desktop)]
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
@@ -439,24 +440,28 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_store::Builder::default().build())
         .plugin(tauri_plugin_opener::init())
-        .setup(|app| {
-            if let Some(window) = app.get_webview_window("main") {
-                let decoder = png::Decoder::new(include_bytes!("../icons/icon.png").as_slice());
-                let mut reader = decoder
-                    .read_info()
-                    .map_err(|error| format!("Could not read Hermes Mobile window icon: {error}"))?;
-                let mut bytes = vec![0; reader.output_buffer_size()];
-                let info = reader
-                    .next_frame(&mut bytes)
-                    .map_err(|error| format!("Could not decode Hermes Mobile window icon: {error}"))?;
-                let icon = tauri::image::Image::new_owned(
-                    bytes[..info.buffer_size()].to_vec(),
-                    info.width,
-                    info.height,
-                );
-                window
-                    .set_icon(icon)
-                    .map_err(|error| format!("Could not set Hermes Mobile window icon: {error}"))?;
+        .setup(|_app| {
+            #[cfg(desktop)]
+            {
+                let app = _app;
+                if let Some(window) = app.get_webview_window("main") {
+                    let decoder = png::Decoder::new(include_bytes!("../icons/icon.png").as_slice());
+                    let mut reader = decoder.read_info().map_err(|error| {
+                        format!("Could not read Hermes Mobile window icon: {error}")
+                    })?;
+                    let mut bytes = vec![0; reader.output_buffer_size()];
+                    let info = reader.next_frame(&mut bytes).map_err(|error| {
+                        format!("Could not decode Hermes Mobile window icon: {error}")
+                    })?;
+                    let icon = tauri::image::Image::new_owned(
+                        bytes[..info.buffer_size()].to_vec(),
+                        info.width,
+                        info.height,
+                    );
+                    window
+                        .set_icon(icon)
+                        .map_err(|error| format!("Could not set Hermes Mobile window icon: {error}"))?;
+                }
             }
             Ok(())
         })
