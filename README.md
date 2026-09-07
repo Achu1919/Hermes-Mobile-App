@@ -30,7 +30,11 @@
 
 Hermes Mobile is a beautiful cross-platform open-source mobile applicaiton that grants easy control of your Hermes Bots (thanks Nous!). It's mobile-native, beautifully compact at ~25KB, and all it really does is connect to your existing Hermes runtime/agents/bots/computer via Tailscale (see Tailscale instrucitons below or in-app).
 
-Your host PC remains the authority for agents, credentials, approvals, tools, sessions, files, and durable history. Hermes Mobile is the secure control surface in your pocket. Hope you enjoy it.
+<p align="center">
+  <img src="docs/assets/HermesMobileReadmeHero.png" alt="Hermes Mobile promotional banner with the headline Give each Bot a job, bot role labels, and a blue-glowing smartphone showing an AI development chat" width="1200" />
+</p>
+
+Your host PC remains the authority for agents, credentials, approvals, tools, sessions, files, and durable history. Hermes Mobile is the secure control surface in your pocket.
 
 Hermes Mobile is an independent community project, not affiliated with or endorsed by Nous Research or Hermes Agent. It grew from a genuine appreciation for their work and excitement around the new Bot capabilities.
 
