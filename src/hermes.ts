@@ -340,6 +340,11 @@ export async function connectAndSubmit(
   await client.submitPrompt(resolvedSessionId, text, event => onEvent(event.type, event.payload, event))
 }
 
+export function settleSessionPrompt(sessionId: string, baseUrl = activeHermes): void {
+  const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || sessionId
+  gateway(baseUrl).settlePrompt(resolved)
+}
+
 export async function interruptSession(sessionId: string, baseUrl = activeHermes): Promise<void> {
   await gateway(baseUrl).interruptSession(resolvedSessions.get(`${baseUrl}:${sessionId}`) || sessionId)
 }

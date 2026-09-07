@@ -14,7 +14,8 @@ import { buildBotRows, resolveCanonicalSessionId } from './live-model'
 import { settleAssistantResponse, type SettledAssistantResponse as SettledAssistantState } from './settled-assistant'
 import { isActiveChatTurn } from './chat-turn'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
-import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
+import { findRecoveredAssistantIndex, timelineSignature, type ActiveChatTurn } from './chat-recovery'
+import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, settleSessionPrompt, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
 type Tab = 'bots' | 'sessions' | 'tasks'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; shape: string }
@@ -69,6 +70,12 @@ export default function App() {
   const [settledAssistant, setSettledAssistant] = useState<SettledAssistantState | null>(null)
   const [sending, setSending] = useState(false)
   const [toolActivities, setToolActivities] = useState<ToolActivity[]>([])
+  const sendingRef = useRef(false)
+  sendingRef.current = sending
+  const settledAssistantRef = useRef<SettledAssistantState | null>(null)
+  settledAssistantRef.current = settledAssistant
+  const activeChatTurnRef = useRef<ActiveChatTurn | null>(null)
+  const chatRecoveryInFlightRef = useRef(false)
   const [query, setQuery] = useState('')
   const [searching, setSearching] = useState(false)
   const [settings, setSettings] = useState(false)
@@ -204,6 +211,7 @@ export default function App() {
   const openSession = (session: LiveSession, latestUsage?: LiveUsage): Promise<void> => {
     const requestId = ++sessionLoadRef.current
     const turnId = ++chatTurnGenerationRef.current
+    activeChatTurnRef.current = null
     const startedAt = performance.now()
     flushSync(() => {
       setSelected(session)
@@ -234,6 +242,55 @@ export default function App() {
     })()
   }
 
+  // The Gateway stream is authoritative while it is healthy, but a mobile
+  // lifecycle/network hiccup can miss a later tool or terminal event. Poll the
+  // open conversation as a recovery path without showing a loading shell or
+  // replacing the live stream on every tick.
+  useEffect(() => {
+    const session = selected
+    if (!session) return
+    let disposed = false
+    const recoverConversation = async () => {
+      if (disposed || chatRecoveryInFlightRef.current || conversationLoading) return
+      chatRecoveryInFlightRef.current = true
+      try {
+        const loaded = await loadMessages(session.id, session.profile)
+        if (disposed) return
+        const activeTurn = activeChatTurnRef.current
+        if (activeTurn && sendingRef.current && activeTurn.sessionId === session.id && activeTurn.profile === session.profile) {
+          const assistantIndex = findRecoveredAssistantIndex(loaded, activeTurn)
+          if (assistantIndex >= 0) {
+            const recovered = loaded[assistantIndex]
+            const settled = settleAssistantResponse(session.id, session.profile, recovered.content, recovered.usage)
+            if (settled) {
+              activeChatTurnRef.current = null
+              chatTurnGenerationRef.current += 1
+              setMessages(loaded.slice(0, assistantIndex))
+              setSettledAssistant(settled)
+              setSending(false)
+              setStreaming('')
+              setToolActivities([])
+              settleSessionPrompt(session.id)
+            }
+          }
+          return
+        }
+        if (sendingRef.current) return
+        const currentSettled = settledAssistantRef.current
+        if (currentSettled && !loaded.some(message => message.role === 'assistant' && message.content === currentSettled.content)) return
+        setMessages(current => timelineSignature(current) === timelineSignature(loaded) ? current : loaded)
+        if (currentSettled) setSettledAssistant(null)
+      } catch {
+        // The live stream and explicit refresh remain the user-visible paths;
+        // a transient recovery poll must not replace a healthy chat with an error.
+      } finally {
+        chatRecoveryInFlightRef.current = false
+      }
+    }
+    const timer = window.setInterval(() => void recoverConversation(), 2_500)
+    return () => { disposed = true; window.clearInterval(timer) }
+  }, [conversationLoading, selected?.id, selected?.profile])
+
   const submit = async (attachmentRefs: { name: string; refText: string }[] = [], voiceText?: string): Promise<boolean> => {
     if (!selected || sending) return false
     const turnId = ++chatTurnGenerationRef.current
@@ -247,6 +304,7 @@ export default function App() {
     const priorSettled = settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null
     const priorAssistantMessage = priorSettled ? { id: -(Date.now() + 1), role: 'assistant' as const, content: priorSettled.content, usage: priorSettled.usage } : null
     const localUserMessage = { id: -Date.now(), role: 'user' as const, content: attachmentSummary(text, attachmentRefs) }
+    activeChatTurnRef.current = { sessionId: selected.id, profile: selected.profile, generation: turnId, userContent: localUserMessage.content, userCountBefore: messages.filter(message => message.role === 'user').length }
     if (voiceText === undefined) setDraft('')
     setSettledAssistant(null)
     setError('')
@@ -291,6 +349,7 @@ export default function App() {
       if (isCurrentTurn()) setError(reason instanceof Error ? reason.message : 'Could not send to Hermes.')
       return false
     } finally {
+      if (activeChatTurnRef.current?.generation === turnId) activeChatTurnRef.current = null
       if (isCurrentTurn()) {
         setSending(false)
         setStreaming('')
