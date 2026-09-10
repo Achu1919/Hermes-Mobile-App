@@ -62,10 +62,28 @@ export function setActiveHermesEndpoint(endpoint: string) { activeHermes = endpo
 const gateways = new Map<string, HermesGatewayClient>()
 const resolvedSessions = new Map<string, string>()
 
+let gatewayListener: ((event: GatewayEvent) => void) | undefined
+
+/** Subscribe to every gateway event across all endpoints (approvals, clarifies, turn events). */
+export function onGatewayEvent(listener: (event: GatewayEvent) => void): void {
+  gatewayListener = listener
+  for (const client of gateways.values()) client.setEventListener(listener)
+}
+
+/** Roster session id that a live gateway session id resolves to, if known this connection. */
+export function rosterIdForLiveSession(liveSessionId: string, baseUrl = activeHermes): string | null {
+  const prefix = `${baseUrl}:`
+  for (const [rosterId, resolved] of resolvedSessions) {
+    if (resolved === liveSessionId && rosterId.startsWith(prefix)) return rosterId.slice(prefix.length)
+  }
+  return null
+}
+
 function gateway(baseUrl = activeHermes) {
   let client = gateways.get(baseUrl)
   if (!client) {
     client = new HermesGatewayClient(() => invoke<string>('hermes_ws_url', { baseUrl }))
+    client.setEventListener(gatewayListener)
     gateways.set(baseUrl, client)
   }
   return client
@@ -342,4 +360,54 @@ export async function connectAndSubmit(
 
 export async function interruptSession(sessionId: string, baseUrl = activeHermes): Promise<void> {
   await gateway(baseUrl).interruptSession(resolvedSessions.get(`${baseUrl}:${sessionId}`) || sessionId)
+}
+
+/** Resolve one gateway approval (`approval.respond`). The gateway matches the live session
+ *  by request_id across all sessions (methods_prompt.py `_approval_respond_session_fallback`). */
+export async function respondToApproval(
+  approval: import('./approvals').PendingApproval,
+  choice: string,
+  resolveAll = false,
+  baseUrl = activeHermes,
+): Promise<void> {
+  const params = (await import('./approvals')).approvalRespondParams({ approval, choice, resolveAll })
+  const result = await gateway(baseUrl).call<{ resolved?: number }>('approval.respond', params)
+  if (result && typeof result === 'object' && typeof result.resolved === 'number' && result.resolved === 0 && !resolveAll) {
+    throw new Error('That approval was already handled or expired.')
+  }
+}
+
+/** Answer one gateway clarify question (`clarify.respond` resolves by request_id, server.py `_respond`). */
+export async function respondToClarify(
+  clarify: import('./approvals').PendingClarify,
+  answer: string,
+  baseUrl = activeHermes,
+): Promise<void> {
+  const params = (await import('./approvals')).clarifyRespondParams({ clarify, answer })
+  const result = await gateway(baseUrl).call<{ status?: string }>('clarify.respond', params)
+  if (result && typeof result === 'object' && result.status === 'expired') {
+    throw new Error('That question expired before your answer arrived.')
+  }
+}
+
+/** Restore pending approval/clarify prompts for a session after (re)connecting to its chat. */
+export async function restoreSessionPrompts(
+  sessionId: string,
+  profile: string,
+  baseUrl = activeHermes,
+): Promise<import('./approvals').PendingPrompt[]> {
+  const { parseApprovalPayload, parseClarifyPayload } = await import('./approvals')
+  const resolved = resolvedSessions.get(`${baseUrl}:${sessionId}`) || await gateway(baseUrl).resumeSession(sessionId, profile)
+  resolvedSessions.set(`${baseUrl}:${sessionId}`, resolved)
+  const detail = await gateway(baseUrl).resumeSessionDetailed(resolved)
+  const prompts: import('./approvals').PendingPrompt[] = []
+  if (detail.pending_approval && typeof detail.pending_approval === 'object') {
+    const parsed = parseApprovalPayload(detail.pending_approval as Record<string, unknown>)
+    if (parsed) prompts.push(parsed)
+  }
+  if (detail.pending_clarify && typeof detail.pending_clarify === 'object') {
+    const parsed = parseClarifyPayload(detail.pending_clarify as Record<string, unknown>)
+    if (parsed) prompts.push(parsed)
+  }
+  return prompts
 }

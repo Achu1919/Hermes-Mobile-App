@@ -4,6 +4,8 @@ import type { ChangeEvent, DragEvent, KeyboardEvent } from 'react'
 
 import { onError as onSttError, onResult as onSttResult, onStateChange as onSttStateChange, isAvailable as sttIsAvailable, requestPermission as requestSttPermission, startListening as startSttListening, stopListening as stopSttListening } from 'tauri-plugin-stt-api'
 import { attachFile, completeSlash, loadModelOptions, setSessionModel, setSessionReasoning, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage, type ModelOptions, type SlashCompletion } from '../hermes'
+import type { PendingPrompt } from '../approvals'
+import { PromptCard } from './PromptCard'
 import { BotAvatar } from './BotAvatar'
 import { MessageCard, MarkdownContent } from './MarkdownContent'
 import type { ToolActivity } from '../App'
@@ -33,6 +35,8 @@ type Props = {
   sending: boolean
   toolActivities: ToolActivity[]
   error: string
+  pendingPrompts?: PendingPrompt[]
+  respondToPrompt?: (prompt: PendingPrompt, input: { choice: string; resolveAll?: boolean; answer?: string }) => Promise<void>
   back: () => void
   refresh: () => void
   openProfile: () => void
@@ -57,7 +61,7 @@ const attachmentId = (file: File) => `${file.name}:${file.size}:${file.lastModif
 const formatFileSize = (size: number) => size < 1024 * 1024 ? `${Math.max(1, Math.round(size / 1024))} KB` : `${(size / (1024 * 1024)).toFixed(1)} MB`
 const maxAttachmentBytes = 50 * 1024 * 1024
 
-export function ChatView({ session, conversationLoading, messages, settledAssistant, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, back, refresh, openProfile, onSessionModelChange, submit, submitVoice, stop }: Props) {
+export function ChatView({ session, conversationLoading, messages, settledAssistant, profiles, draft, setDraft, mentions, streaming, sending, toolActivities, error, pendingPrompts, respondToPrompt, back, refresh, openProfile, onSessionModelChange, submit, submitVoice, stop }: Props) {
   const threadRef = useRef<HTMLDivElement>(null)
   const contentRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -452,6 +456,13 @@ export function ChatView({ session, conversationLoading, messages, settledAssist
         {showEmptyState && <section className="chat-empty-state" aria-label={`Start a conversation with ${botName}`}><BotAvatar profile={botProfile} fallbackName={session.profile} variant="welcome"/><h1>{botName.toUpperCase()}</h1><p>Say something to get started.</p></section>}
         {messages.map(message => <MessageCard key={message.id} message={message} onEdit={editMessage} profile={botProfile} fallbackName={session.profile} revealTimestamp={message.role === 'assistant' && revealedTimestampId === message.id} onRevealTimestamp={() => setRevealedTimestampId(current => current === message.id ? null : message.id)}/>)}
         {toolActivities.map(activity => <ToolActivityRow activity={activity} key={activity.id}/>)}
+        {pendingPrompts?.length ? pendingPrompts.map(prompt => (
+          <PromptCard
+            key={`${prompt.kind}:${prompt.requestId}`}
+            prompt={prompt}
+            respond={input => (respondToPrompt ? respondToPrompt(prompt, input) : Promise.resolve())}
+          />
+        )) : null}
         {showActiveAssistant && <article className="message-row assistant-row live-response"><div className="assistant-message-layout"><BotAvatar profile={botProfile} fallbackName={session.profile} variant="message"/><div className="assistant-message-content">{sending && !streaming && <div className="live-label"><span className="stream-pulse"/> Thinking</div>}{activeAssistantText && <MarkdownContent>{activeAssistantText}</MarkdownContent>}<div className={`response-stats ${settledStats ? '' : 'response-stats-placeholder'}`} aria-label={settledStats ? 'Response generation statistics' : undefined} aria-hidden={settledStats ? undefined : true}>{settledStats || '\u00a0'}</div></div></div></article>}
       </div>
     </div>

@@ -190,9 +190,13 @@ export class HermesGatewayClient {
     })
   }
 
+  async resumeSessionDetailed(sessionId: string, profile?: string): Promise<GatewayPayload> {
+    return this.call<GatewayPayload>('session.resume', buildSessionResumeParams(sessionId, profile))
+  }
+
   async resumeSession(sessionId: string, profile?: string): Promise<string> {
-    const result = await this.call<{ session_id?: string }>('session.resume', buildSessionResumeParams(sessionId, profile))
-    return result.session_id || sessionId
+    const result = await this.resumeSessionDetailed(sessionId, profile)
+    return typeof result.session_id === 'string' && result.session_id ? result.session_id : sessionId
   }
 
   async submitPrompt(sessionId: string, text: string, listener: (event: GatewayEvent) => void): Promise<void> {

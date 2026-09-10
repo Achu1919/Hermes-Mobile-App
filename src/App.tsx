@@ -14,7 +14,8 @@ import { buildBotRows, resolveCanonicalSessionId } from './live-model'
 import { settleAssistantResponse, type SettledAssistantResponse as SettledAssistantState } from './settled-assistant'
 import { isActiveChatTurn } from './chat-turn'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
-import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
+import { parsePendingPrompt, type PendingPrompt } from './approvals'
+import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, onGatewayEvent, respondToApproval, respondToClarify, restoreSessionPrompts, rosterIdForLiveSession, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
 type Tab = 'bots' | 'sessions' | 'tasks'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; shape: string }
@@ -85,6 +86,56 @@ export default function App() {
   const [rosterPullRefreshing, setRosterPullRefreshing] = useState(false)
   const rosterScrollRef = useRef<HTMLDivElement | null>(null)
   const rosterPullStartRef = useRef<number | null>(null)
+
+  // ── Pending approvals & clarify questions (from any Bot session) ──
+  const [pendingPrompts, setPendingPrompts] = useState<Record<string, PendingPrompt[]>>({})
+  const upsertPrompt = (rosterSessionId: string, prompt: PendingPrompt) => {
+    setPendingPrompts(current => {
+      const forSession = (current[rosterSessionId] || []).filter(item => item.requestId !== prompt.requestId)
+      return { ...current, [rosterSessionId]: [...forSession, prompt] }
+    })
+  }
+  const replaceSessionPrompts = (rosterSessionId: string, prompts: PendingPrompt[]) => {
+    setPendingPrompts(current => {
+      if (prompts.length) return { ...current, [rosterSessionId]: prompts }
+      if (!(rosterSessionId in current)) return current
+      const next = { ...current }
+      delete next[rosterSessionId]
+      return next
+    })
+  }
+  const removePrompt = (rosterSessionId: string, requestId: string) => {
+    setPendingPrompts(current => {
+      const remaining = (current[rosterSessionId] || []).filter(item => item.requestId !== requestId)
+      if (!remaining.length) {
+        if (!(rosterSessionId in current)) return current
+        const next = { ...current }
+        delete next[rosterSessionId]
+        return next
+      }
+      return { ...current, [rosterSessionId]: remaining }
+    })
+  }
+  const respondToPrompt = async (rosterSessionId: string, prompt: PendingPrompt, input: { choice: string; resolveAll?: boolean; answer?: string }) => {
+    if (prompt.kind === 'approval') {
+      await respondToApproval(prompt, input.choice, input.resolveAll)
+    } else {
+      await respondToClarify(prompt, input.answer || input.choice)
+    }
+    // Keep the card visible long enough to register the confirmation, then drop it.
+    window.setTimeout(() => removePrompt(rosterSessionId, prompt.requestId), 1200)
+  }
+
+  useEffect(() => {
+    onGatewayEvent(event => {
+      if (event.type !== 'approval.request' && event.type !== 'clarify.request') return
+      const prompt = parsePendingPrompt(event.type, event.payload)
+      if (!prompt) return
+      const liveId = event.sessionId || ''
+      const rosterId = rosterIdForLiveSession(liveId) || liveId
+      upsertPrompt(rosterId, prompt)
+    })
+  }, [activeEndpoint])
 
   const navigationRef = useRef({ selected: false, profileSheet: false, settings: false, createOpen: false, tab: 'bots' as Tab })
   navigationRef.current = { selected: Boolean(selected), profileSheet, settings, createOpen, tab }
@@ -217,6 +268,10 @@ export default function App() {
       setConversationLoading(true)
     })
     return (async () => {
+      // Restore any approval/clarify the gateway is still holding for this session.
+      void restoreSessionPrompts(session.id, session.profile)
+        .then(prompts => { if (requestId === sessionLoadRef.current) replaceSessionPrompts(session.id, prompts) })
+        .catch(() => { /* prompts stay hidden if the detail RPC is unavailable */ })
       try {
         const loaded = await loadMessages(session.id, session.profile)
         if (requestId !== sessionLoadRef.current || turnId !== chatTurnGenerationRef.current) return
@@ -352,7 +407,7 @@ export default function App() {
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={connectionStatus === 'connected'} endpoint={activeEndpoint !== 'http://127.0.0.1:9119' ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => refresh()} onPairingBusy={setPairingBusyState} onPaired={async endpoint => { const normalized = activateEndpoint(endpoint); const data = await refresh(normalized, true); if (!data) throw new Error(lastConnectionErrorRef.current || 'Signed in, but authenticated Hermes REST or live WebSocket verification failed.'); localStorage.setItem('hermes-mobile-active-endpoint', normalized) }}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
-  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} settledAssistant={settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} submitVoice={text => submit([], text)} stop={() => void stop()}/>
+  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} settledAssistant={settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} pendingPrompts={pendingPrompts[selected.id] || []} respondToPrompt={(prompt, input) => respondToPrompt(selected.id, prompt, input)} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} submitVoice={text => submit([], text)} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
 
   return <main className="app roster-shell">
@@ -364,7 +419,18 @@ export default function App() {
     <div className="roster-list-scroll" ref={rosterScrollRef} onTouchStart={rosterTouchStart} onTouchMove={rosterTouchMove} onTouchEnd={rosterTouchEnd}>
       {rosterPullActive && <div className="roster-pull-cue" style={{ height: `${rosterPullRefreshing ? 46 : rosterPullDistance}px` }}><RefreshCw size={15} className={rosterPullRefreshing ? 'pull-refresh-spinner' : ''}/><span>{rosterPullRefreshing ? 'Refreshing…' : rosterPullDistance >= 56 ? 'Release to refresh' : 'Pull to refresh'}</span></div>}
       {error && <Notice message={error} retry={() => void refresh()}/>}
-      {loading && !profiles.length ? <Skeleton/> : tab === 'bots' ? <section className="bot-list">{rows.map(({ profile, session }, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={profile.name} disabled={!session} onClick={() => session && void openSession(session)}><BotAvatar profile={profile} fallbackName={profile.name}/><span className="bot-copy"><b>{profile.display_name || titleize(profile.name)}</b><small>{session?.preview || profile.description || 'No messages yet'} </small></span><span className="meta">{ago(session?.last_active)}{session && <i className={session.unread ? 'unread' : ''}/>}</span></button>)}</section> : <section className="bot-list">{visibleSessions.map((session, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={`${session.profile}:${session.id}`} onClick={() => void openSession(session)}><BotAvatar profile={profiles.find(profile => profile.name === session.profile)} fallbackName={session.profile} variant="session"/><span className="bot-copy"><b>{session.title || 'Untitled session'}</b><small>{titleize(session.profile)} · {session.preview}</small></span><span className="meta">{ago(session.last_active)}</span></button>)}</section>}
+      {loading && !profiles.length ? <Skeleton/> : tab === 'bots' ? <section className="bot-list">{rows.map(({ profile, session }, index) => {
+        const rosterId = session ? resolveCanonicalSessionId(session) : null
+        const prompts = rosterId ? (pendingPrompts[rosterId] || []) : []
+        const flag = prompts.length
+          ? (prompts.some(item => item.kind === 'approval') ? 'Approval' : 'Question')
+          : null
+        return <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={profile.name} disabled={!session} onClick={() => session && void openSession(session)}>
+          <BotAvatar profile={profile} fallbackName={profile.name}/>
+          <span className="bot-copy"><b>{profile.display_name || titleize(profile.name)}</b><small>{session?.preview || profile.description || 'No messages yet'} </small></span>
+          <span className="meta">{flag ? <i className="roster-prompt-flag">{flag}</i> : null}{ago(session?.last_active)}{session && <i className={session.unread ? 'unread' : ''}/>}</span>
+        </button>
+      })}</section> : <section className="bot-list">{visibleSessions.map((session, index) => <button className="bot-row enter" style={{ animationDelay: `${Math.min(index, 8) * 28}ms` }} key={`${session.profile}:${session.id}`} onClick={() => void openSession(session)}><BotAvatar profile={profiles.find(profile => profile.name === session.profile)} fallbackName={session.profile} variant="session"/><span className="bot-copy"><b>{session.title || 'Untitled session'}</b><small>{titleize(session.profile)} · {session.preview}</small></span><span className="meta">{ago(session.last_active)}</span></button>)}</section>}
     </div>
     <footer className="roster-actions">{tab === 'bots' ? <><button className="secondary" disabled title="Group-room transport is not yet enabled"><Users size={16}/> New group</button><button className="primary" onClick={() => setCreateOpen(true)}><Plus size={16}/> New Bot</button></> : <button className="primary wide" onClick={() => setTab('bots')}>Back to Bots</button>}</footer>
   </main>
