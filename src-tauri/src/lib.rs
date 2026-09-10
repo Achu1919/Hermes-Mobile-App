@@ -140,6 +140,17 @@ fn hermes_snapshot(app: tauri::AppHandle, base_url: String) -> Result<String, St
 }
 
 #[tauri::command]
+fn hermes_usage_analytics(
+    app: tauri::AppHandle,
+    base_url: String,
+    days: i64,
+) -> Result<String, String> {
+    let origin = server_origin(&base_url);
+    let clamped = days.clamp(1, 365);
+    authenticated_get(&app, &origin, &format!("/api/analytics/usage?days={clamped}"))
+}
+
+#[tauri::command]
 fn hermes_model_options(
     app: tauri::AppHandle,
     base_url: String,
@@ -519,6 +530,7 @@ pub fn run() {
             hermes_native_sign_in,
             hermes_connection_probe,
             hermes_snapshot,
+            hermes_usage_analytics,
             hermes_model_options,
             hermes_session_messages,
             hermes_transcribe,

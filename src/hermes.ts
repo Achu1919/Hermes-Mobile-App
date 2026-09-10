@@ -290,6 +290,51 @@ export async function triggerCronJob(jobId: string, profile = '', baseUrl = acti
   return JSON.parse(raw) as CronJob
 }
 
+export type UsageDay = {
+  day: string
+  input_tokens?: number
+  output_tokens?: number
+  cache_read_tokens?: number
+  reasoning_tokens?: number
+  estimated_cost?: number
+  actual_cost?: number
+  sessions?: number
+  api_calls?: number
+}
+export type UsageModelRow = {
+  model: string
+  input_tokens?: number
+  output_tokens?: number
+  estimated_cost?: number
+  sessions?: number
+  api_calls?: number
+}
+export type UsageTotals = {
+  total_input?: number
+  total_output?: number
+  total_cache_read?: number
+  total_reasoning?: number
+  total_estimated_cost?: number
+  total_actual_cost?: number
+  total_sessions?: number
+  total_api_calls?: number
+}
+export type UsageInsights = {
+  daily: UsageDay[]
+  by_model: UsageModelRow[]
+  by_task?: { task: string; input_tokens?: number; output_tokens?: number; calls?: number }[]
+  totals: UsageTotals
+  period_days: number
+  skills?: { name: string; count: number }[]
+  tools?: Record<string, number>
+}
+
+/** 30-day token/cost insights from the dashboard's analytics engine (desktop Insights page data). */
+export async function loadUsageInsights(days = 30, baseUrl = activeHermes): Promise<UsageInsights> {
+  const raw = await invoke<string>('hermes_usage_analytics', { baseUrl, days })
+  return JSON.parse(raw) as UsageInsights
+}
+
 export async function loadCronBlueprints(baseUrl = activeHermes): Promise<AutomationBlueprint[]> {
   const raw = await invoke<string>('hermes_cron_blueprints', { baseUrl })
   const result = JSON.parse(raw) as { blueprints?: AutomationBlueprint[] }
