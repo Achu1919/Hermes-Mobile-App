@@ -1,4 +1,6 @@
-mod remote_auth;
+// Public so integration tests (src-tauri/tests/) can drive the real sign-in flow; the
+// production Tauri commands in this crate call it in-process.
+pub mod remote_auth;
 
 use std::time::Duration;
 #[cfg(desktop)]
