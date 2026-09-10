@@ -162,8 +162,21 @@ export async function createProfile(input: { name: string; description: string; 
 }
 
 export async function loadMessages(sessionId: string, profile: string, baseUrl = activeHermes): Promise<LiveMessage[]> {
+  const cacheKey = `${baseUrl}:${sessionId}`
+  const cached = messageCache.get(cacheKey)
+  if (cached && Date.now() - cached.at < MESSAGE_CACHE_TTL_MS) return cached.messages
   const raw = await invoke<string>('hermes_session_messages', { baseUrl, sessionId, profile })
-  return (JSON.parse(raw) as { messages: LiveMessage[] }).messages
+  const messages = (JSON.parse(raw) as { messages: LiveMessage[] }).messages
+  messageCache.set(cacheKey, { messages, at: Date.now() })
+  return messages
+}
+
+const MESSAGE_CACHE_TTL_MS = 60_000
+const messageCache = new Map<string, { messages: LiveMessage[]; at: number }>()
+
+/** Drop a session's cached transcript (after a send, or before a forced reload). */
+export function invalidateMessageCache(sessionId: string, baseUrl = activeHermes): void {
+  messageCache.delete(`${baseUrl}:${sessionId}`)
 }
 
 export async function transcribeAudio(profile: string, dataUrl: string, mimeType: string, baseUrl = activeHermes): Promise<string> {

@@ -2,6 +2,8 @@
 // production Tauri commands in this crate call it in-process.
 pub mod remote_auth;
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 #[cfg(desktop)]
 use tauri::Manager;
@@ -9,6 +11,77 @@ use tauri_plugin_opener::OpenerExt;
 
 fn server_origin(base_url: &str) -> String {
     base_url.trim_end_matches('/').to_string()
+}
+
+/// One shared HTTP client for every gateway call: connection pooling reuses
+/// warm TLS/Tailscale connections instead of paying a fresh TCP + TLS
+/// handshake per request (which dominated phone-side latency).
+static HTTP_CLIENT: OnceLock<reqwest::blocking::Client> = OnceLock::new();
+/// Bearer access tokens by origin, so the Android keyring is read once per
+/// session instead of once per request.
+static BEARER_TOKENS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+/// Loopback SPA tokens by origin, cached for the same reason.
+static LOOPBACK_TOKENS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+pub(crate) fn http_client() -> &'static reqwest::blocking::Client {
+    HTTP_CLIENT.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(30))
+            .pool_idle_timeout(Duration::from_secs(90))
+            .pool_max_idle_per_host(4)
+            .user_agent("hermes-mobile")
+            .build()
+            .expect("shared Hermes HTTP client")
+    })
+}
+
+fn cached_token(cache: &OnceLock<Mutex<HashMap<String, String>>>, origin: &str) -> Option<String> {
+    cache.get()?.lock().ok()?.get(origin).cloned()
+}
+
+fn store_token(cache: &OnceLock<Mutex<HashMap<String, String>>>, origin: &str, token: &str) {
+    if let Some(map) = cache.get() {
+        if let Ok(mut guard) = map.lock() {
+            guard.insert(origin.to_string(), token.to_string());
+        }
+    }
+}
+
+fn clear_token(cache: &OnceLock<Mutex<HashMap<String, String>>>, origin: &str) {
+    if let Some(map) = cache.get() {
+        if let Ok(mut guard) = map.lock() {
+            guard.remove(origin);
+        }
+    }
+}
+
+fn loopback_token(origin: &str) -> Result<String, String> {
+    if let Some(token) = cached_token(&LOOPBACK_TOKENS, origin) {
+        return Ok(token);
+    }
+    let token = session_token(http_client(), origin)?;
+    store_token(&LOOPBACK_TOKENS, origin, &token);
+    Ok(token)
+}
+
+fn bearer_token(app: &tauri::AppHandle, origin: &str) -> Result<String, String> {
+    if let Some(token) = cached_token(&BEARER_TOKENS, origin) {
+        return Ok(token);
+    }
+    let token = remote_auth::load(app, origin)?.access_token;
+    store_token(&BEARER_TOKENS, origin, &token);
+    Ok(token)
+}
+
+fn text_of(response: reqwest::blocking::Response, label: &str) -> Result<String, String> {
+    response
+        .error_for_status()
+        .map_err(|error| format!("Hermes rejected the request: {error}"))?
+        .text()
+        .map_err(|error| format!("Could not read Hermes response: {error}"))
+        .map_err(|error| {
+            if label.is_empty() { error } else { format!("{label}: {error}") }
+        })
 }
 
 fn session_token(client: &reqwest::blocking::Client, origin: &str) -> Result<String, String> {
@@ -38,38 +111,32 @@ fn is_loopback(origin: &str) -> bool {
 }
 
 fn authenticated_get(app: &tauri::AppHandle, origin: &str, path: &str) -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|error| error.to_string())?;
+    let client = http_client();
     let request = client.get(format!("{origin}{path}"));
     if is_loopback(origin) {
         request
-            .header("X-Hermes-Session-Token", session_token(&client, origin)?)
+            .header("X-Hermes-Session-Token", loopback_token(origin)?)
             .send()
-            .map_err(|error| format!("Hermes request failed: {error}"))?
-            .error_for_status()
-            .map_err(|error| format!("Hermes rejected the request: {error}"))?
-            .text()
-            .map_err(|error| format!("Could not read Hermes response: {error}"))
+            .map_err(|error| format!("Hermes request failed: {error}"))
+            .and_then(|response| text_of(response, ""))
     } else {
         let mut response = request
-            .bearer_auth(remote_auth::load(app, origin)?.access_token)
+            .bearer_auth(bearer_token(app, origin)?)
             .send()
             .map_err(|error| format!("Hermes request failed: {error}"))?;
         if response.status().as_u16() == 401 {
+            // The cached token went stale (server restart rotates keys): drop it,
+            // refresh via the stored refresh token, cache the new access token.
+            clear_token(&BEARER_TOKENS, origin);
             let refreshed = remote_auth::refresh(app, origin)?;
+            store_token(&BEARER_TOKENS, origin, &refreshed.access_token);
             response = client
                 .get(format!("{origin}{path}"))
                 .bearer_auth(refreshed.access_token)
                 .send()
                 .map_err(|error| format!("Hermes retry failed after token refresh: {error}"))?;
         }
-        response
-            .error_for_status()
-            .map_err(|error| format!("Hermes rejected the request: {error}"))?
-            .text()
-            .map_err(|error| format!("Could not read Hermes response: {error}"))
+        text_of(response, "")
     }
 }
 
@@ -179,7 +246,7 @@ fn hermes_session_messages(
 }
 
 fn authenticated_post(origin: &str, path: &str, body: serde_json::Value) -> Result<String, String> {
-    authenticated_post_with_timeout(origin, path, body, Duration::from_secs(120))
+    authenticated_post_with_timeout(origin, path, body, Duration::ZERO)
 }
 
 fn authenticated_post_with_timeout(
@@ -188,21 +255,20 @@ fn authenticated_post_with_timeout(
     body: serde_json::Value,
     timeout: Duration,
 ) -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(timeout)
-        .build()
-        .map_err(|error| error.to_string())?;
-    let token = session_token(&client, origin)?;
-    client
-        .post(format!("{origin}{path}"))
+    let client = http_client();
+    let token = loopback_token(origin)?;
+    // Per-request timeout overrides the shared client's default, so long waits
+    // (cron trigger runs to completion) still ride the pooled connection.
+    let mut request = client.post(format!("{origin}{path}"));
+    if timeout != Duration::ZERO {
+        request = request.timeout(timeout);
+    }
+    request
         .header("X-Hermes-Session-Token", token)
         .json(&body)
         .send()
-        .map_err(|error| format!("Hermes request failed: {error}"))?
-        .error_for_status()
-        .map_err(|error| format!("Hermes rejected the request: {error}"))?
-        .text()
-        .map_err(|error| format!("Could not read Hermes response: {error}"))
+        .map_err(|error| format!("Hermes request failed: {error}"))
+        .and_then(|response| text_of(response, ""))
 }
 
 #[tauri::command]

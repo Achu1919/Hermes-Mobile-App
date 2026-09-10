@@ -17,7 +17,7 @@ import { settleAssistantResponse, type SettledAssistantResponse as SettledAssist
 import { isActiveChatTurn } from './chat-turn'
 import { errorMessage, RequestEpoch, selectRestoredEndpoint } from './connection-state'
 import { parsePendingPrompt, type PendingPrompt } from './approvals'
-import { connectAndSubmit, createProfile, interruptSession, loadMessages, loadSnapshot, onGatewayEvent, respondToApproval, respondToClarify, restoreSessionPrompts, rosterIdForLiveSession, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
+import { connectAndSubmit, createProfile, interruptSession, invalidateMessageCache, loadMessages, loadSnapshot, onGatewayEvent, respondToApproval, respondToClarify, restoreSessionPrompts, rosterIdForLiveSession, savedHermesEndpoint, setActiveHermesEndpoint, type LiveMessage, type LiveProfile, type LiveSession, type LiveUsage } from './hermes'
 
 type Tab = 'bots' | 'sessions' | 'tasks' | 'usage'
 type DraftBot = { role: string; name: string; description: string; soul: string; model: string; provider: string; shape: string }
@@ -284,7 +284,9 @@ export default function App() {
         if (requestId === sessionLoadRef.current && turnId === chatTurnGenerationRef.current) setError(reason instanceof Error ? reason.message : 'Could not load this Hermes conversation.')
       }
       finally {
-        const remaining = Math.max(0, 700 - (performance.now() - startedAt))
+        // A short floor only smooths out a fast network; it never adds a
+        // noticeable wait. Stale requests skip the state update entirely.
+        const remaining = Math.max(0, 80 - (performance.now() - startedAt))
         if (remaining) await new Promise(resolve => window.setTimeout(resolve, remaining))
         if (requestId === sessionLoadRef.current && turnId === chatTurnGenerationRef.current) setConversationLoading(false)
       }
@@ -342,6 +344,9 @@ export default function App() {
       } else {
         await openSession(selected, completionUsage)
       }
+      // The transcript just gained a user+assistant exchange; the 60s cache
+      // would otherwise serve the stale copy when the chat is reopened.
+      invalidateMessageCache(selected.id)
       await refresh()
       return true
     } catch (reason) {
@@ -409,7 +414,11 @@ export default function App() {
   if (createOpen) return <CreateWizard step={createStep} setStep={setCreateStep} draft={botDraft} setDraft={setBotDraft} creating={creating} error={error} close={() => { setCreateOpen(false); setCreateStep(0); setError('') }} finish={() => void finishCreate()}/>
   if (settings) return <ConnectionSettings profiles={profiles.length} sessions={sessions.length} connected={connectionStatus === 'connected'} endpoint={activeEndpoint !== 'http://127.0.0.1:9119' ? activeEndpoint : undefined} theme={theme} setTheme={setTheme} close={() => setSettings(false)} refresh={() => refresh()} onPairingBusy={setPairingBusyState} onPaired={async endpoint => { const normalized = activateEndpoint(endpoint); const data = await refresh(normalized, true); if (!data) throw new Error(lastConnectionErrorRef.current || 'Signed in, but authenticated Hermes REST or live WebSocket verification failed.'); localStorage.setItem('hermes-mobile-active-endpoint', normalized) }}/>
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
-  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} settledAssistant={settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} pendingPrompts={pendingPrompts[selected.id] || []} respondToPrompt={(prompt, input) => respondToPrompt(selected.id, prompt, input)} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} submitVoice={text => submit([], text)} stop={() => void stop()}/>
+  const reloadSession = (session: LiveSession) => {
+    invalidateMessageCache(session.id)
+    return openSession(session)
+  }
+  if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} settledAssistant={settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} pendingPrompts={pendingPrompts[selected.id] || []} respondToPrompt={(prompt, input) => respondToPrompt(selected.id, prompt, input)} back={() => setSelected(null)} refresh={() => void reloadSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} submitVoice={text => submit([], text)} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
   if (tab === 'usage') return <SurfaceErrorBoundary label="Usage" resetKey={activeEndpoint}><UsageView back={() => setTab('bots')}/></SurfaceErrorBoundary>
 

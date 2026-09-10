@@ -101,10 +101,7 @@ pub fn refresh(app: &AppHandle, origin: &str) -> Result<Tokens, String> {
                 .to_string(),
         );
     }
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(20))
-        .build()
-        .map_err(|e| format!("Could not prepare Hermes token refresh: {e}"))?;
+    let client = crate::http_client();
     let response = client
         .post(format!("{origin}/auth/native/refresh"))
         .json(&serde_json::json!({
@@ -124,10 +121,7 @@ pub fn refresh(app: &AppHandle, origin: &str) -> Result<Tokens, String> {
 }
 
 pub fn ws_ticket(app: &AppHandle, origin: &str) -> Result<String, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("Could not prepare Hermes WebSocket ticket: {e}"))?;
+    let client = crate::http_client();
     let mut response = client
         .post(format!("{origin}/api/auth/ws-ticket"))
         .bearer_auth(load(app, origin)?.access_token)
