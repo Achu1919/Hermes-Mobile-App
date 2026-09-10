@@ -20,6 +20,9 @@ importers:
       '@tauri-apps/plugin-store':
         specifier: ^2.4.0
         version: 2.4.4
+      '@tauri-apps/plugin-websocket':
+        specifier: ^2.4.3
+        version: 2.4.3
       blobatar:
         specifier: 2.0.0
         version: 2.0.0(react@19.2.8)
@@ -555,6 +558,9 @@ packages:
 
   '@tauri-apps/plugin-store@2.4.4':
     resolution: {integrity: sha512-oxSMaj/QpVfJcBMYX5aOQV94fWvga0MwQMfD6TLlbK2dh+ShPWAzefd8HWXhvOKjPRJdGVAkW7ZGO76JzzjaDA==}
+
+  '@tauri-apps/plugin-websocket@2.4.3':
+    resolution: {integrity: sha512-c85ykljg6AzY6Zw4KpYsEBaLirjPIs6m8xxC6hZcdwAchckaBU368US+oSsa5B43PjSLukjwD5vOOqzYYnswWA==}
 
   '@types/babel__core@7.20.5':
     resolution: {integrity: sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA==}
@@ -1596,6 +1602,10 @@ snapshots:
       '@tauri-apps/api': 2.11.1
 
   '@tauri-apps/plugin-store@2.4.4':
+    dependencies:
+      '@tauri-apps/api': 2.11.1
+
+  '@tauri-apps/plugin-websocket@2.4.3':
     dependencies:
       '@tauri-apps/api': 2.11.1
 

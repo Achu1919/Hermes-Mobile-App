@@ -1,5 +1,7 @@
 export type GatewayPayload = Record<string, unknown>
 
+import { NativeGatewaySocket } from './native-socket'
+
 export type GatewayEvent = {
   type: string
   payload: GatewayPayload
@@ -65,7 +67,16 @@ export function parseGatewayEvent(params: GatewayPayload): GatewayEvent | null {
   }
 }
 
-export type WebSocketFactory = (url: string) => WebSocket
+export type GatewaySocket = {
+  readyState: number
+  onopen: (() => void) | null
+  onerror: ((reason?: string) => void) | null
+  onclose: (() => void) | null
+  onmessage: ((event: { data: unknown }) => void) | null
+  send(data: string): void
+  close(): void
+}
+export type WebSocketFactory = (url: string) => GatewaySocket
 
 /**
  * One durable Hermes Desktop Gateway connection.
@@ -75,7 +86,7 @@ export type WebSocketFactory = (url: string) => WebSocket
  * own completion. The client never retries a submitted turn automatically.
  */
 export class HermesGatewayClient {
-  private socket: WebSocket | null = null
+  private socket: GatewaySocket | null = null
   private connecting: Promise<void> | null = null
   private nextId = 1
   private generation = 0
@@ -88,7 +99,9 @@ export class HermesGatewayClient {
 
   constructor(
     private readonly urlFactory: () => Promise<string>,
-    private readonly webSocketFactory: WebSocketFactory = url => new WebSocket(url),
+    // Default dials through Tauri's native WebSocket (no WebView Origin header —
+    // the dashboard's WS guard rejects the phone's `http://tauri.localhost`).
+    private readonly webSocketFactory: WebSocketFactory = url => new NativeGatewaySocket(url) as unknown as GatewaySocket,
   ) {}
 
   setEventListener(listener?: (event: GatewayEvent) => void) {
@@ -96,7 +109,7 @@ export class HermesGatewayClient {
   }
 
   async connect(): Promise<void> {
-    if (this.socket?.readyState === WebSocket.OPEN) return
+    if (this.socket?.readyState === NativeGatewaySocket.OPEN) return
     if (this.connecting) return this.connecting
     this.connecting = this.open()
     try {
@@ -178,7 +191,7 @@ export class HermesGatewayClient {
   async call<T>(method: string, params: GatewayPayload, timeoutMs = 30_000): Promise<T> {
     await this.connect()
     const socket = this.socket
-    if (!socket || socket.readyState !== WebSocket.OPEN) throw new Error('Hermes Gateway is not connected')
+    if (!socket || socket.readyState !== NativeGatewaySocket.OPEN) throw new Error('Hermes Gateway is not connected')
     const id = this.nextId++
     return new Promise<T>((resolve, reject) => {
       const timer = window.setTimeout(() => {
