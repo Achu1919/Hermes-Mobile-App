@@ -105,9 +105,9 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) before modifying the production bridge.
 - [Hermes Agent documentation](https://hermes-agent.nousresearch.com/docs/)
 - [Nous Research Discord](https://discord.gg/NousResearch)
 
-## Future improvements & ideas
+## Future improvements & ideas ✏️
 
-These are planned directions for making Hermes Mobile an even richer companion for the Hermes host runtime:
+These are planned directions for making Hermes Mobile an even richer companion for the Hermes host runtime. Have a cool improvement or update? Pull requests and collaboration are welcome!
 
 - [ ] **Native mobile notifications** — Deliver actionable phone notifications when Bots complete work, receive new messages, need clarification, request approval, or encounter an important event.
 - [ ] **Gestures and swipe navigation** — Add mobile-native gestures throughout the app, including Android edge/back gestures and intuitive swipe interactions for moving between screens and task/chat surfaces.
