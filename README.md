@@ -105,6 +105,19 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) before modifying the production bridge.
 - [Hermes Agent documentation](https://hermes-agent.nousresearch.com/docs/)
 - [Nous Research Discord](https://discord.gg/NousResearch)
 
+## Future improvements & ideas
+
+These are planned directions for making Hermes Mobile an even richer companion for the Hermes host runtime:
+
+- [ ] **Native mobile notifications** — Deliver actionable phone notifications when Bots complete work, receive new messages, need clarification, request approval, or encounter an important event.
+- [ ] **Gestures and swipe navigation** — Add mobile-native gestures throughout the app, including Android edge/back gestures and intuitive swipe interactions for moving between screens and task/chat surfaces.
+- [ ] **Automatic updates and release settings** — Add an optional update checker and user-controlled update settings backed by GitHub Releases, with clear version notes and safe install handoffs.
+- [ ] **Richer tool-call, thinking, and action presentation** — Bring more of Hermes Desktop’s detailed activity insight to mobile, including clearer tool progress, model activity, reasoning summaries, and action status. Add chat-level controls for showing detailed insights, compact summaries, or no reasoning/activity detail.
+- [ ] **Plan mode and question handling** — Add a polished Plan mode and a clear way to review, answer, approve, or revise Bot questions and proposed plans without losing conversation context.
+- [ ] **Group Chats** — Expand beyond the current one-Bot chat and session model to support multi-Bot group conversations with clear participant identity and delivery behavior.
+- [ ] **More proactive chat synchronization** — Improve foreground refresh and live update behavior so streamed thinking, tool calls, and subsequent responses appear promptly without requiring a manual refresh tap.
+- [ ] **Desktop screen and computer view** — Add an optional desktop/computer control entry point in the chat header so users can inspect a Bot’s available screen or view the Hermes Desktop computer when that capability is configured and authorized.
+
 [badge-hermes]: https://img.shields.io/badge/Hermes%20Agent-Live%20control%20surface-F59E0B?style=flat-square
 [badge-ios]: https://img.shields.io/badge/Target-iOS-7DD3FC?logo=apple&logoColor=white&style=flat-square
 [badge-android]: https://img.shields.io/badge/Target-Android-3DDC84?logo=android&logoColor=white&style=flat-square
