@@ -111,6 +111,7 @@ These are planned directions for making Hermes Mobile an even richer companion f
 
 - [ ] **Native mobile notifications** — Deliver actionable phone notifications when Bots complete work, receive new messages, need clarification, request approval, or encounter an important event.
 - [ ] **Gestures and swipe navigation** — Add mobile-native gestures throughout the app, including Android edge/back gestures and intuitive swipe interactions for moving between screens and task/chat surfaces.
+- [ ] **Native-feeling motion and interaction polish** — Build the spring-damped animations, gesture settling, transition physics, haptics, and other small interaction niceties that native mobile apps often provide automatically, but that Hermes Mobile must deliberately implement across its Tauri surfaces.
 - [ ] **Automatic updates and release settings** — Add an optional update checker and user-controlled update settings backed by GitHub Releases, with clear version notes and safe install handoffs.
 - [ ] **Richer tool-call, thinking, and action presentation** — Bring more of Hermes Desktop’s detailed activity insight to mobile, including clearer tool progress, model activity, reasoning summaries, and action status. Add chat-level controls for showing detailed insights, compact summaries, or no reasoning/activity detail.
 - [ ] **Plan mode and question handling** — Add a polished Plan mode and a clear way to review, answer, approve, or revise Bot questions and proposed plans without losing conversation context.
