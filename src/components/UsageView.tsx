@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, ArrowLeft, Coins, Database, Gauge, Layers, Zap } from 'lucide-react'
 
-import { loadUsageInsights, type UsageDay, type UsageInsights, type UsageModelRow } from '../hermes'
+import { loadUsageInsights, type UsageInsights, type UsageModelRow } from '../hermes'
 
 type Props = { back: () => void }
 
@@ -25,7 +25,6 @@ const dayLabel = (day: string) => {
 export function usageHeadline(insights: UsageInsights): UsageSection[] {
   const totals = insights.totals || {}
   const input = totals.total_input || 0
-  compact(0)
   const output = totals.total_output || 0
   const cache = totals.total_cache_read || 0
   const calls = totals.total_api_calls || 0
@@ -67,14 +66,42 @@ const taskLabels: Record<string, string> = {
   titles: 'Chat titles',
   embeddings: 'Memory search',
   curator: 'Memory curator',
+  background_review: 'Background reviews',
+  approval: 'Approval checks',
 }
 
 /** Aux-task rows ("what is compression costing me"). */
 export function usageTasks(insights: UsageInsights): { label: string; value: string }[] {
-  return (insights.by_task || []).map(item => ({
+  return (insights.by_task || []).filter(item => item.task).map(item => ({
     label: taskLabels[item.task] || item.task,
     value: `${compact((item.input_tokens || 0) + (item.output_tokens || 0))} tok`,
   }))
+}
+
+/** Tool-call leaderboard (server sends a ranked list with counts). */
+export function usageTools(insights: UsageInsights): { label: string; value: string }[] {
+  return (insights.tools || []).filter(item => item.tool).slice(0, 8).map(item => ({
+    label: item.tool,
+    value: `${item.count}×`,
+  }))
+}
+
+/** Skills leaderboard from the server's {summary, top_skills} block. */
+export function usageSkills(insights: UsageInsights): { label: string; value: string }[] {
+  return (insights.skills?.top_skills || []).filter(item => item.skill).slice(0, 8).map(item => ({
+    label: item.skill,
+    value: item.percentage != null ? `${Math.round(item.percentage)}%` : `${item.total_count || 0}×`,
+  }))
+}
+
+/** One-line skill summary ("5 loads across 2 skills"). */
+export function usageSkillSummary(insights: UsageInsights): string | null {
+  const summary = insights.skills?.summary
+  if (!summary) return null
+  const loads = summary.total_skill_loads || 0
+  const distinct = summary.distinct_skills_used || 0
+  if (!loads && !distinct) return null
+  return `${loads} skill loads across ${distinct} skill${distinct === 1 ? '' : 's'}`
 }
 
 export function UsageView({ back }: Props) {
@@ -109,6 +136,9 @@ export function UsageView({ back }: Props) {
   const models = useMemo(() => insights ? usageByModel(insights) : [], [insights])
   const bars = useMemo(() => insights ? usageDailyBars(insights) : [], [insights])
   const tasks = useMemo(() => insights ? usageTasks(insights) : [], [insights])
+  const tools = useMemo(() => insights ? usageTools(insights) : [], [insights])
+  const skills = useMemo(() => insights ? usageSkills(insights) : [], [insights])
+  const skillSummary = useMemo(() => insights ? usageSkillSummary(insights) : null, [insights])
 
   const onTouchStart = (event: React.TouchEvent) => {
     if (scrollRef.current?.scrollTop === 0) pullStartRef.current = event.touches[0].clientY
@@ -180,19 +210,20 @@ export function UsageView({ back }: Props) {
             ))}
           </section>
         )}
-        {(insights.tools && Object.keys(insights.tools).length > 0) && (
+        {tools.length > 0 && (
           <section className="usage-panel">
             <b><Gauge size={13} /> Tool calls</b>
-            {Object.entries(insights.tools).sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, count]) => (
-              <div className="usage-row" key={name}><span>{name}</span><small>{count}×</small></div>
+            {tools.map(tool => (
+              <div className="usage-row" key={tool.label}><span>{tool.label}</span><small>{tool.value}</small></div>
             ))}
           </section>
         )}
-        {(insights.skills?.length ?? 0) > 0 && (
+        {(skills.length > 0 || skillSummary) && (
           <section className="usage-panel">
             <b><Coins size={13} /> Skills used</b>
-            {insights.skills!.slice(0, 8).map(skill => (
-              <div className="usage-row" key={skill.name}><span>{skill.name}</span><small>{skill.count}×</small></div>
+            {skillSummary && <p className="usage-skill-summary">{skillSummary}</p>}
+            {skills.map(skill => (
+              <div className="usage-row" key={skill.label}><span>{skill.label}</span><small>{skill.value}</small></div>
             ))}
           </section>
         )}

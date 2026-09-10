@@ -319,20 +319,51 @@ export type UsageTotals = {
   total_sessions?: number
   total_api_calls?: number
 }
+export type UsageTaskRow = { task: string; input_tokens?: number; output_tokens?: number; estimated_cost?: number; api_calls?: number; models?: string[] }
+export type UsageSkillRow = { skill: string; total_count?: number; percentage?: number }
+export type UsageToolRow = { tool: string; count: number; percentage?: number }
 export type UsageInsights = {
   daily: UsageDay[]
   by_model: UsageModelRow[]
-  by_task?: { task: string; input_tokens?: number; output_tokens?: number; calls?: number }[]
+  by_task?: UsageTaskRow[]
   totals: UsageTotals
   period_days: number
-  skills?: { name: string; count: number }[]
-  tools?: Record<string, number>
+  /** Server shape: {summary: {...}, top_skills: [...]}. */
+  skills?: { summary?: { total_skill_loads?: number; total_skill_edits?: number; total_skill_actions?: number; distinct_skills_used?: number }; top_skills?: UsageSkillRow[] }
+  /** Server shape: a LIST of {tool, count, percentage} (desktop renders the same list). */
+  tools?: UsageToolRow[]
+}
+
+const num = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : 0
+
+/**
+ * Normalize the analytics payload defensively: server shapes drift between
+ * dashboard versions, and a bad guess here must degrade a panel — never take
+ * the whole app down. Every field becomes a typed array or zero.
+ */
+export function normalizeUsageInsights(raw: unknown): UsageInsights {
+  const data = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+  const asList = (value: unknown): Record<string, unknown>[] => Array.isArray(value) ? value.filter(item => item && typeof item === 'object') as Record<string, unknown>[] : []
+  const skillsRaw = data.skills && typeof data.skills === 'object' ? data.skills as Record<string, unknown> : {}
+  const topSkills = asList(skillsRaw.top_skills)
+  return {
+    daily: asList(data.daily).map(item => ({ ...item, day: String(item.day || '') })) as UsageDay[],
+    by_model: asList(data.by_model).map(item => ({ ...item, model: String(item.model || '') })) as UsageModelRow[],
+    by_task: asList(data.by_task).map(item => ({ ...item, task: String(item.task || '') })) as UsageTaskRow[],
+    totals: (data.totals && typeof data.totals === 'object' ? data.totals : {}) as UsageTotals,
+    period_days: num(data.period_days) || 30,
+    skills: {
+      summary: (skillsRaw.summary && typeof skillsRaw.summary === 'object' ? skillsRaw.summary : {}) as UsageInsights['skills'] extends { summary?: infer S } ? S : never,
+      top_skills: topSkills.map(item => ({ ...item, skill: String(item.skill || '') })) as UsageSkillRow[],
+    },
+    tools: asList(data.tools).map(item => ({ ...item, tool: String(item.tool || ''), count: num(item.count) })) as UsageToolRow[],
+  }
 }
 
 /** 30-day token/cost insights from the dashboard's analytics engine (desktop Insights page data). */
 export async function loadUsageInsights(days = 30, baseUrl = activeHermes): Promise<UsageInsights> {
   const raw = await invoke<string>('hermes_usage_analytics', { baseUrl, days })
-  return JSON.parse(raw) as UsageInsights
+  return normalizeUsageInsights(JSON.parse(raw))
 }
 
 export async function loadCronBlueprints(baseUrl = activeHermes): Promise<AutomationBlueprint[]> {

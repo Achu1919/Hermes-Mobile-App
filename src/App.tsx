@@ -7,6 +7,7 @@ import { BotAppearancePicker } from './components/BotAppearancePicker'
 import { BotProfileSheet } from './components/BotProfileSheet'
 import { TasksView } from './components/TasksView'
 import { UsageView } from './components/UsageView'
+import { SurfaceErrorBoundary } from './components/SurfaceErrorBoundary'
 import { ConnectionSettings } from './components/ConnectionSettings'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { flushSync } from 'react-dom'
@@ -410,7 +411,7 @@ export default function App() {
   if (selected && profileSheet) return <BotProfileSheet profile={profiles.find(profile => profile.name === selected.profile)} session={selected} onClose={() => setProfileSheet(false)} onUpdated={() => void refresh()}/>
   if (selected) return <ChatView session={selected} conversationLoading={conversationLoading} messages={messages} settledAssistant={settledAssistant?.sessionId === selected.id && settledAssistant.profile === selected.profile ? settledAssistant : null} profiles={profiles} draft={draft} setDraft={setDraft} mentions={mentions} streaming={streaming} sending={sending} toolActivities={toolActivities} error={error} pendingPrompts={pendingPrompts[selected.id] || []} respondToPrompt={(prompt, input) => respondToPrompt(selected.id, prompt, input)} back={() => setSelected(null)} refresh={() => void openSession(selected)} openProfile={() => setProfileSheet(true)} onSessionModelChange={model => setSelected(current => current ? { ...current, model } : current)} submit={submit} submitVoice={text => submit([], text)} stop={() => void stop()}/>
   if (tab === 'tasks') return <TasksView back={() => setTab('bots')} profiles={profiles}/>
-  if (tab === 'usage') return <UsageView back={() => setTab('bots')}/>
+  if (tab === 'usage') return <SurfaceErrorBoundary label="Usage" resetKey={activeEndpoint}><UsageView back={() => setTab('bots')}/></SurfaceErrorBoundary>
 
   return <main className="app roster-shell">
     <div className="roster-pinned">

@@ -24,3 +24,4 @@
 .usage-row:last-child{border-bottom:0}
 .usage-row span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .usage-row small{flex:0 0 auto;color:var(--muted);font-size:11px}
+.usage-skill-summary{margin:0 0 6px;color:var(--muted);font-size:11px}
