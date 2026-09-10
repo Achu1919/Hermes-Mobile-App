@@ -109,15 +109,28 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) before modifying the production bridge.
 
 These are planned directions for making Hermes Mobile an even richer companion for the Hermes host runtime. Have a cool improvement or update? Pull requests and collaboration are welcome!
 
-- [ ] **Native mobile notifications** — Deliver actionable phone notifications when Bots complete work, receive new messages, need clarification, request approval, or encounter an important event.
-- [ ] **Gestures and swipe navigation** — Add mobile-native gestures throughout the app, including Android edge/back gestures and intuitive swipe interactions for moving between screens and task/chat surfaces.
-- [ ] **Native-feeling motion and interaction polish** — Build the spring-damped animations, gesture settling, transition physics, haptics, and other small interaction niceties that native mobile apps often provide automatically, but that Hermes Mobile must deliberately implement across its Tauri surfaces.
-- [ ] **Automatic updates and release settings** — Add an optional update checker and user-controlled update settings backed by GitHub Releases, with clear version notes and safe install handoffs.
+### Agent experience & live operations
+
+- [ ] **Actionable notification controls** — Let users choose which events generate notifications: completed Bot work, approval requests, clarification questions, scheduled-task results, errors, and mentions. Include actions such as **Open chat**, **Approve**, or **Reply** where safe.
+- [ ] **Bot health and availability indicators** — Show whether a Bot is available, busy, disconnected, missing its host profile, or has recently failed. This is especially useful when several Bots run through the same Hermes host.
+- [ ] **Approval and sensitive-action inbox** — Provide one place to review pending approvals, sudo prompts, clarification requests, and other actions that need the user’s attention.
 - [ ] **Richer tool-call, thinking, and action presentation** — Bring more of Hermes Desktop’s detailed activity insight to mobile, including clearer tool progress, model activity, reasoning summaries, and action status. Add chat-level controls for showing detailed insights, compact summaries, or no reasoning/activity detail.
 - [ ] **Plan mode and question handling** — Add a polished Plan mode and a clear way to review, answer, approve, or revise Bot questions and proposed plans without losing conversation context.
 - [ ] **Group Chats** — Expand beyond the current one-Bot chat and session model to support multi-Bot group conversations with clear participant identity and delivery behavior.
 - [ ] **More proactive chat synchronization** — Improve foreground refresh and live update behavior so streamed thinking, tool calls, and subsequent responses appear promptly without requiring a manual refresh tap.
 - [ ] **Desktop screen and computer view** — Add an optional desktop/computer control entry point in the chat header so users can inspect a Bot’s available screen or view the Hermes Desktop computer when that capability is configured and authorized.
+
+### Mobile interaction & design
+
+- [ ] **Gestures and swipe navigation** — Add mobile-native gestures throughout the app, including Android edge/back gestures and intuitive swipe interactions for moving between screens and task/chat surfaces.
+- [ ] **Better Android Back and iOS navigation parity** — Make system Back, swipe-back, modal dismissal, nested task screens, and chat navigation feel consistent across Android, iOS, and desktop.
+- [ ] **Native-feeling motion and interaction polish** — Build the spring-damped animations, gesture settling, transition physics, haptics, and other small interaction niceties that native mobile apps often provide automatically, but that Hermes Mobile must deliberately implement across its Tauri surfaces.
+
+### Platform, files & host connectivity
+
+- [ ] **Automatic updates and release settings** — Add an optional update checker and user-controlled update settings backed by GitHub Releases, with clear version notes and safe install handoffs.
+- [ ] **Attachment and file handoff improvements** — Add clearer upload progress, retry/remove controls, file-size limits, and host-side staging status while continuing to let Hermes interpret the files.
+- [ ] **Host profiles and multiple gateways** — Allow one phone to securely remember multiple Hermes hosts or Tailscale gateways, with clear names such as “Home PC,” “Work Mac,” or “Linux Server.”
 
 [badge-hermes]: https://img.shields.io/badge/Hermes%20Agent-Live%20control%20surface-F59E0B?style=flat-square
 [badge-ios]: https://img.shields.io/badge/Target-iOS-7DD3FC?logo=apple&logoColor=white&style=flat-square
